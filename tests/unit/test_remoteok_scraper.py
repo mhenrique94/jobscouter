@@ -35,6 +35,7 @@ async def test_remoteok_normalizes_jobs() -> None:
         request_timeout=20,
         remoteok_api_url="https://remoteok.com/api",
         remotar_base_url="https://remotar.com.br",
+        remotar_api_url="https://api.remotar.com.br",
         user_agent="test-agent",
     )
 

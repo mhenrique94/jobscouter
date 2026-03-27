@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from urllib.parse import urlparse, parse_qs
 
 from jobscouter.core.config import Settings
 from jobscouter.scrapers.remotar import RemotarScraper
@@ -34,6 +35,32 @@ DETAIL_HTML = """
 </html>
 """
 
+EMPTY_HTML = """
+<html>
+  <body>
+    <script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{}}}</script>
+  </body>
+</html>
+"""
+
+API_LISTING = {
+    "meta": {"total": 1, "per_page": 1, "current_page": 1, "last_page": 1},
+    "data": [
+        {
+            "id": 132279,
+            "title": "Go-to-Market Engineer",
+            "description": "<p>Build GTM processes</p>",
+            "createdAt": "2026-03-26T16:01:06.642-03:00",
+            "externalLink": "https://example.com/apply",
+            "company": {"name": "TestGorilla"},
+            "city": {"name": "Sao Paulo"},
+            "state": {"name": "SP"},
+            "country": {"name": "Brasil"},
+            "jobSalary": {"from": 0, "to": 0, "currency": "BRL", "type": "uninformed"},
+        }
+    ],
+}
+
 
 @pytest.mark.asyncio
 async def test_remotar_parses_listing_and_detail() -> None:
@@ -50,6 +77,7 @@ async def test_remotar_parses_listing_and_detail() -> None:
         request_timeout=20,
         remoteok_api_url="https://remoteok.com/api",
         remotar_base_url="https://remotar.com.br",
+        remotar_api_url="https://api.remotar.com.br",
         user_agent="test-agent",
     )
 
@@ -64,3 +92,40 @@ async def test_remotar_parses_listing_and_detail() -> None:
     assert jobs[0].company == "Sur Global Services"
     assert jobs[0].location == "100% Remoto"
     assert jobs[0].salary == "R$ 6,000.00 a R$ 7,000.00"
+
+
+@pytest.mark.asyncio
+async def test_remotar_falls_back_to_api_when_html_has_no_jobs() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url == "https://remotar.com.br":
+            return httpx.Response(200, text=EMPTY_HTML)
+        if url.startswith("https://api.remotar.com.br/jobs"):
+            parsed = urlparse(url)
+            query = parse_qs(parsed.query)
+            assert query.get("limit") == ["1"]
+            return httpx.Response(200, json=API_LISTING)
+        return httpx.Response(404)
+
+    settings = Settings(
+        database_url="sqlite://",
+        log_level="INFO",
+        request_timeout=20,
+        remoteok_api_url="https://remoteok.com/api",
+        remotar_base_url="https://remotar.com.br",
+        remotar_api_url="https://api.remotar.com.br",
+        user_agent="test-agent",
+    )
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, follow_redirects=True) as client:
+        scraper = RemotarScraper(client=client, settings=settings)
+        jobs = await scraper.fetch_jobs(limit=1)
+
+    assert len(jobs) == 1
+    assert jobs[0].external_id == "132279"
+    assert jobs[0].title == "Go-to-Market Engineer"
+    assert jobs[0].company == "TestGorilla"
+    assert jobs[0].url == "https://example.com/apply"
+    assert jobs[0].location == "Sao Paulo, SP, Brasil"
+    assert jobs[0].salary is None

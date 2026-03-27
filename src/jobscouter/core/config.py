@@ -12,6 +12,7 @@ class Settings:
     request_timeout: float
     remoteok_api_url: str
     remotar_base_url: str
+    remotar_api_url: str
     user_agent: str
 
     @classmethod
@@ -25,6 +26,7 @@ class Settings:
             request_timeout=float(os.getenv("REQUEST_TIMEOUT", "20")),
             remoteok_api_url=os.getenv("REMOTEOK_API_URL", "https://remoteok.com/api"),
             remotar_base_url=os.getenv("REMOTAR_BASE_URL", "https://remotar.com.br"),
+            remotar_api_url=os.getenv("REMOTAR_API_URL", "https://api.remotar.com.br"),
             user_agent=os.getenv("USER_AGENT", "jobscouter-ingestion-bot/0.1"),
         )
 
