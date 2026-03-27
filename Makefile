@@ -1,4 +1,4 @@
-.PHONY: dev bootstrap bootstrap-only down
+.PHONY: dev bootstrap bootstrap-only web web-bootstrap-only dev-full down
 
 dev: bootstrap
 
@@ -7,6 +7,15 @@ bootstrap:
 
 bootstrap-only:
 	./bootstrap.sh --bootstrap-only
+
+web:
+	./bootstrap-web.sh
+
+web-bootstrap-only:
+	./bootstrap-web.sh --bootstrap-only
+
+dev-full:
+	./dev-full.sh
 
 down:
 	@if docker compose version >/dev/null 2>&1; then \

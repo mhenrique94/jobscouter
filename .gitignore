@@ -6,3 +6,22 @@ __pycache__/
 .coverage
 htmlcov/
 .env
+
+# Monorepo frontend (web)
+/web/node_modules/
+/web/.next/
+/web/out/
+/web/build/
+/web/coverage/
+/web/.vercel/
+/web/.env.local
+/web/.env.development.local
+/web/.env.test.local
+/web/.env.production.local
+/web/next-env.d.ts
+/web/.package-lock.hash
+/web/*.tsbuildinfo
+/web/npm-debug.log*
+/web/yarn-debug.log*
+/web/yarn-error.log*
+/web/.pnpm-debug.log*

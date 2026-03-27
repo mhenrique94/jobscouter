@@ -116,6 +116,64 @@ ou:
 make down
 ```
 
+## Frontend (Next.js)
+
+O frontend fica na pasta `web` e usa Next.js 15 + TypeScript + Tailwind + Shadcn/UI.
+
+### Comando inteligente para subir so o frontend
+
+Use:
+
+```bash
+make web
+```
+
+Esse comando executa `./bootstrap-web.sh`, que:
+
+1. valida `node` e `npm`;
+2. valida/carrega variaveis a partir do `.env` da raiz (sem `.env` separado em `web`);
+3. verifica se `web/package-lock.json` mudou (hash);
+4. instala dependencias somente quando necessario (`npm install`);
+5. inicia o Next.js em modo dev (`npm run dev`).
+
+Se nada mudou no lockfile e `node_modules` ja existe, ele nao reinstala.
+
+Para apenas preparar o frontend sem iniciar servidor:
+
+```bash
+make web-bootstrap-only
+```
+
+### Subir frontend e backend juntos
+
+Use:
+
+```bash
+make dev-full
+```
+
+Esse fluxo:
+
+1. prepara o backend com `./bootstrap.sh --bootstrap-only`;
+2. sobe a API FastAPI em background na porta `8000`;
+3. prepara o frontend com `./bootstrap-web.sh --bootstrap-only`;
+4. inicia o frontend em foreground.
+
+Ao encerrar o comando (Ctrl+C), o backend em background e finalizado automaticamente.
+
+### Setup manual do frontend (opcional)
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Variaveis uteis no frontend (definidas no `.env` da raiz):
+
+- `NEXT_PUBLIC_API_BASE_URL` (padrao: `http://localhost:8000`)
+- `NEXT_PUBLIC_API_BASE_PATH` (padrao: vazio)
+
 ## API HTTP (FastAPI)
 
 Com a API em execucao, a documentacao interativa fica em `http://127.0.0.1:8000/docs`.
