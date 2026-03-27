@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from urllib.parse import urlencode
 
 from jobscouter.schemas.job import JobPayload
 from jobscouter.scrapers.base import BaseScraper
@@ -9,8 +10,18 @@ from jobscouter.scrapers.base import BaseScraper
 class RemoteOKScraper(BaseScraper):
     source_name = "remoteok"
 
-    async def fetch_jobs(self, limit: int | None = None, max_pages: int | None = None) -> list[JobPayload]:
-        payload = await self._get_json(self.settings.remoteok_api_url)
+    async def fetch_jobs(
+        self,
+        limit: int | None = None,
+        max_pages: int | None = None,
+        keyword: str | None = None,
+    ) -> list[JobPayload]:
+        _ = max_pages
+        api_url = self.settings.remoteok_api_url
+        if keyword:
+            api_url = f"{api_url}?{urlencode({'tag': keyword})}"
+
+        payload = await self._get_json(api_url)
         jobs: list[JobPayload] = []
 
         for entry in payload:

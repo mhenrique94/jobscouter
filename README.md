@@ -41,12 +41,19 @@ Após cada upsert, a vaga e classificada imediatamente para reduzir custo de pro
 As regras sao lidas de `filters.yaml` na raiz do projeto:
 
 ```yaml
+search_terms: ["python", "django", "vue", "vuejs", "fullstack", "javascript", "nuxt"]
+
 filters:
 	exclude_keywords: ["Presencial", "Híbrido", "Junior", "Estágio", "PHP", "Java", "C#", "Rust"]
 	include_keywords: ["Remote", "Remoto", "Home Office", "Django", "Vue", "Python", "Fullstack", "Pleno", "Mid-level"]
 ```
 
-Prioridade de classificacao:
+#### Termos de busca (search_terms)
+
+A secao `search_terms` define quais termos-chave o scraper ira buscar ativamente em cada fonte.
+Quando o comando `jobscouter-ingest` e executado **sem o parametro `--keyword`**, ele itera sobre todos esses termos automaticamente, garantindo cobertura ampla e idempotencia (deduplicacao por constraints DB).
+
+#### Prioridade de classificacao
 
 1. Se encontrar qualquer `exclude_keyword`, define `discarded`.
 2. Caso passe pelo exclude e encontre alguma `include_keyword`, define `ready_for_ai`.
@@ -143,7 +150,8 @@ A busca e finita por padrao: sem `--continuous`, o comando executa 1 ciclo e enc
 ### Parametros
 
 - `--source {all,remoteok,remotar}`: escolhe a fonte.
-- `--limit N`: limita a quantidade de vagas processadas por fonte em cada ciclo.
+- `--keyword TERMO`: busca explicita por um termo especifico. Quando omitido, o scraper itera sobre todos os termos definidos em `search_terms` no `filters.yaml`. Cada busca respeita a idempotencia do banco de dados.
+- `--limit N`: limita a quantidade de vagas processadas por fonte **e por cada termo** em cada ciclo.
 - `--max-pages N`: limita quantas paginas da listagem da API da Remotar podem ser consultadas por ciclo.
 - `--continuous`: habilita modo continuo (ciclos sucessivos).
 - `--poll-interval-seconds N`: intervalo entre ciclos no modo continuo (padrao: `300`).
@@ -157,11 +165,43 @@ A busca e finita por padrao: sem `--continuous`, o comando executa 1 ciclo e enc
 
 ### Exemplos
 
-- Rodada unica com limite por fonte: `jobscouter-ingest --source all --limit 20`
+- Rodada unica com limite por fonte (itera sobre todos os `search_terms` do YAML): `jobscouter-ingest --source all --limit 20`
+- Rodada unica com busca especifica: `jobscouter-ingest --source remoteok --keyword django --limit 10`
+- Ambas fontes, somente termo 'python': `jobscouter-ingest --source all --keyword python --limit 5`
 - Rodando continuamente, com pausa de 2 minutos e limite de 10 ciclos: `jobscouter-ingest --source all --continuous --poll-interval-seconds 120 --max-cycles 10`
 - Rodando continuamente por no maximo 1 hora: `jobscouter-ingest --source all --continuous --max-duration-seconds 3600`
 - Rodando ate ficar 3 ciclos seguidos sem novidades: `jobscouter-ingest --source all --continuous --max-empty-cycles 3`
 - Forcando no maximo 2 paginas da API da Remotar por ciclo: `jobscouter-ingest --source remotar --max-pages 2`
+
+### Busca ativa por termos
+
+Por padrao, o scraper itera sobre todos os `search_terms` definidos no arquivo de configuracao.
+Cada termo dispara uma busca independente em cada fonte, com um delay automatico de 2 segundos entre termos para reduzir risco de bloqueio por frequencia:
+
+**Exemplo de fluxo:**
+
+```
+Ciclo 1
+  RemoteOK + 'python'    -> 10 vagas
+  (sleep 2s)
+  RemoteOK + 'django'    -> 4 vagas
+  (sleep 2s)
+  ... continua para todos os termos ...
+  Remotar + 'python'     -> 10 vagas
+  (sleep 2s)
+  ... e assim por diante
+```
+
+**Idempotencia garantida**: mesmo se uma vaga aparecer em multiplos termos (ex.: Python + Django),
+os constraints unicos no banco de dados (`source` + `external_id`, `source` + `url`) impedem duplicatas.
+A vaga e inserida apenas uma vez, mas seu `last_seen_at` e atualizado em cada ciclo.
+
+#### Comportamento do Remotar com busca
+
+- **Com termo**: tenta buscar via `/search?q={termo}` primeiro. Se falhar (404), faz fallback automatico para a API com parametro de busca.
+- **Sem termo** (home page): consulta a listagem da home e, se vazia, faz fallback para API.
+
+Esse comportamento garante resiliencia: mesmo que o endpoint de busca mude ou nao exista, o scraper continua funcionando via API.
 
 ## Fontes suportadas
 

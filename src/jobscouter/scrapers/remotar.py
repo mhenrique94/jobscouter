@@ -31,11 +31,25 @@ class RemotarListingItem:
 class RemotarScraper(BaseScraper):
     source_name = "remotar"
 
-    async def fetch_jobs(self, limit: int | None = None, max_pages: int | None = None) -> list[JobPayload]:
-        html = await self._get_text(self.settings.remotar_base_url)
-        listings = self._extract_listing_items(html)
+    async def fetch_jobs(
+        self,
+        limit: int | None = None,
+        max_pages: int | None = None,
+        keyword: str | None = None,
+    ) -> list[JobPayload]:
+        listing_url = self.settings.remotar_base_url
+        if keyword:
+            listing_url = f"{self.settings.remotar_base_url}/search?{urlencode({'q': keyword})}"
+
+        try:
+            html = await self._get_text(listing_url)
+            listings = self._extract_listing_items(html)
+        except Exception as exc:
+            self.logger.warning("Falha ao buscar listagem em %s; usando fallback para API: %s", listing_url, exc)
+            listings = []
+
         if not listings:
-            listings = await self._extract_listing_items_from_api(limit=limit, max_pages=max_pages)
+            listings = await self._extract_listing_items_from_api(limit=limit, max_pages=max_pages, keyword=keyword)
 
         jobs: list[JobPayload] = []
 
@@ -91,6 +105,7 @@ class RemotarScraper(BaseScraper):
         self,
         limit: int | None = None,
         max_pages: int | None = None,
+        keyword: str | None = None,
     ) -> list[RemotarListingItem]:
         api_url = f"{self.settings.remotar_api_url}/jobs"
         items: list[RemotarListingItem] = []
@@ -104,6 +119,8 @@ class RemotarScraper(BaseScraper):
             params: dict[str, int | str] = {"active": "true", "page": page}
             if limit is not None:
                 params["limit"] = limit
+            if keyword:
+                params["q"] = keyword
 
             data = await self._get_json(f"{api_url}?{urlencode(params)}")
             rows = data.get("data") if isinstance(data, dict) else None

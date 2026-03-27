@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from importlib import import_module
+from pathlib import Path
 from time import monotonic
 
 import httpx
@@ -28,10 +30,48 @@ def _positive_float(value: str) -> float:
     return parsed
 
 
+def _load_search_terms(filters_path: Path | None = None) -> list[str]:
+    yaml_module = _load_yaml_module()
+    if yaml_module is None:
+        return []
+
+    resolved_filters_path = filters_path or Path(__file__).resolve().parents[2] / "filters.yaml"
+    try:
+        with resolved_filters_path.open("r", encoding="utf-8") as stream:
+            payload = yaml_module.safe_load(stream) or {}
+    except FileNotFoundError:
+        return []
+    except Exception:
+        return []
+
+    if not isinstance(payload, dict):
+        return []
+
+    raw_terms = payload.get("search_terms")
+    if not isinstance(raw_terms, list):
+        return []
+
+    terms: list[str] = []
+    for term in raw_terms:
+        if isinstance(term, str):
+            normalized = term.strip()
+            if normalized:
+                terms.append(normalized)
+    return terms
+
+
+def _load_yaml_module():
+    try:
+        return import_module("yaml")
+    except ModuleNotFoundError:
+        return None
+
+
 async def run_ingestion(
     source: str,
     limit: int | None,
     max_pages: int | None,
+    keyword: str | None,
     continuous: bool,
     poll_interval_seconds: float,
     max_cycles: int | None,
@@ -43,6 +83,10 @@ async def run_ingestion(
     cycle = 0
     empty_cycles = 0
     started_at = monotonic()
+    search_terms = [keyword.strip()] if keyword and keyword.strip() else _load_search_terms()
+    if not search_terms:
+        logger.warning("Nenhum termo de busca configurado; executando sem termo explicito.")
+        search_terms = [""]
 
     async with httpx.AsyncClient(
         headers={"User-Agent": settings.user_agent},
@@ -55,6 +99,10 @@ async def run_ingestion(
         }
 
         selected_sources = list(scrapers.keys()) if source == "all" else [source]
+        source_labels = {
+            "remoteok": "RemoteOK",
+            "remotar": "Remotar",
+        }
 
         while True:
             cycle += 1
@@ -68,16 +116,28 @@ async def run_ingestion(
             with session_scope() as session:
                 ingestion_service = JobIngestionService(session)
                 for selected_source in selected_sources:
-                    logger.info("[%s] Coletando vagas...", selected_source)
-                    jobs = await scrapers[selected_source].fetch_jobs(
-                        limit=limit,
-                        max_pages=max_pages if selected_source == "remotar" else None,
-                    )
-                    stats = await ingestion_service.ingest_jobs(jobs)
-                    per_source_stats[selected_source] = stats
-                    cycle_stats.add(stats)
-                    logger.info("[%s] %s", selected_source, stats.to_pretty_line())
-                    new_or_updated_in_cycle += stats.inserted + stats.updated
+                    source_stats = IngestionStats()
+                    for term_index, term in enumerate(search_terms):
+                        logger.info(
+                            "[Ingestion] Buscando vagas para o termo: '%s' na fonte '%s'...",
+                            term,
+                            source_labels.get(selected_source, selected_source),
+                        )
+                        jobs = await scrapers[selected_source].fetch_jobs(
+                            limit=limit,
+                            max_pages=max_pages if selected_source == "remotar" else None,
+                            keyword=term,
+                        )
+                        stats = await ingestion_service.ingest_jobs(jobs)
+                        source_stats.add(stats)
+                        cycle_stats.add(stats)
+                        logger.info("[%s][%s] %s", selected_source, term, stats.to_pretty_line())
+                        new_or_updated_in_cycle += stats.inserted + stats.updated
+
+                        if term_index < len(search_terms) - 1:
+                            await asyncio.sleep(2)
+
+                    per_source_stats[selected_source] = source_stats
 
             logger.info("Resumo do ciclo %s:", cycle)
             for selected_source in selected_sources:
@@ -127,6 +187,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fonte especifica a ser executada.",
     )
     parser.add_argument("--limit", type=_positive_int, default=None, help="Limita a quantidade de vagas por fonte.")
+    parser.add_argument(
+        "--keyword",
+        type=str,
+        default=None,
+        help="Termo de busca explicito. Quando ausente, usa search_terms do filters.yaml.",
+    )
     parser.add_argument(
         "--max-pages",
         type=_positive_int,
@@ -179,6 +245,7 @@ def main() -> None:
             source=args.source,
             limit=args.limit,
             max_pages=args.max_pages,
+            keyword=args.keyword,
             continuous=args.continuous,
             poll_interval_seconds=args.poll_interval_seconds,
             max_cycles=args.max_cycles,

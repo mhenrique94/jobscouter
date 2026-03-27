@@ -1,3 +1,5 @@
+search_terms: ["python", "django", "vue", "vuejs", "fullstack", "javascript", "nuxt"]
+
 filters:
   exclude_keywords: ["Presencial", "Híbrido", "Junior", "Estágio", "PHP", "Java", "C#", "Rust"]
   include_keywords: ["Remote", "Remoto", "Home Office", "Django", "Vue", "Python", "Fullstack", "Pleno", "Mid-level"]

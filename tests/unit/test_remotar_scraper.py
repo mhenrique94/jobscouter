@@ -121,6 +121,9 @@ async def test_remotar_parses_listing_and_detail() -> None:
         remotar_base_url="https://remotar.com.br",
         remotar_api_url="https://api.remotar.com.br",
         user_agent="test-agent",
+        gemini_api_key="",
+        gemini_model="gemini-1.5-flash-latest",
+        gemini_retry_delay_seconds=1.5,
     )
 
     transport = httpx.MockTransport(handler)
@@ -157,6 +160,9 @@ async def test_remotar_falls_back_to_api_when_html_has_no_jobs() -> None:
         remotar_base_url="https://remotar.com.br",
         remotar_api_url="https://api.remotar.com.br",
         user_agent="test-agent",
+        gemini_api_key="",
+        gemini_model="gemini-1.5-flash-latest",
+        gemini_retry_delay_seconds=1.5,
     )
 
     transport = httpx.MockTransport(handler)
@@ -203,6 +209,9 @@ async def test_remotar_api_paginates_and_respects_max_pages() -> None:
         remotar_base_url="https://remotar.com.br",
         remotar_api_url="https://api.remotar.com.br",
         user_agent="test-agent",
+        gemini_api_key="",
+        gemini_model="gemini-1.5-flash-latest",
+        gemini_retry_delay_seconds=1.5,
     )
 
     transport = httpx.MockTransport(handler)
@@ -212,3 +221,38 @@ async def test_remotar_api_paginates_and_respects_max_pages() -> None:
 
     assert requests_by_page == [1, 2]
     assert [job.external_id for job in jobs] == ["1001", "1002"]
+
+
+@pytest.mark.asyncio
+async def test_remotar_keyword_uses_search_url_and_api_fallback_with_query() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url == "https://remotar.com.br/search?q=django":
+            return httpx.Response(200, text=EMPTY_HTML)
+        if url.startswith("https://api.remotar.com.br/jobs"):
+            parsed = urlparse(url)
+            query = parse_qs(parsed.query)
+            assert query.get("q") == ["django"]
+            return httpx.Response(200, json=API_LISTING)
+        return httpx.Response(404)
+
+    settings = Settings(
+        database_url="sqlite://",
+        log_level="INFO",
+        request_timeout=20,
+        remoteok_api_url="https://remoteok.com/api",
+        remotar_base_url="https://remotar.com.br",
+        remotar_api_url="https://api.remotar.com.br",
+        user_agent="test-agent",
+        gemini_api_key="",
+        gemini_model="gemini-1.5-flash-latest",
+        gemini_retry_delay_seconds=1.5,
+    )
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, follow_redirects=True) as client:
+        scraper = RemotarScraper(client=client, settings=settings)
+        jobs = await scraper.fetch_jobs(limit=1, keyword="django")
+
+    assert len(jobs) == 1
+    assert jobs[0].external_id == "132279"
