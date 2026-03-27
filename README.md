@@ -63,6 +63,107 @@ O matching e case-insensitive sobre titulo + descricao da vaga.
 
 ## Executando localmente
 
+### Comando unico inteligente (recomendado)
+
+Use o bootstrap para preparar tudo e subir a API:
+
+```bash
+./bootstrap.sh
+```
+
+Atalho recomendado:
+
+```bash
+make dev
+```
+
+Na primeira execucao (ou quando `pyproject.toml` mudar), ele:
+
+1. valida Python 3.11+ e Docker Compose;
+2. cria `.env` a partir de `.env.example` (se necessario);
+3. cria/atualiza `.venv`;
+4. instala dependencias (`pip install -e .[dev]`) com cache por hash do `pyproject.toml`;
+5. sobe PostgreSQL (`docker compose up -d postgres`);
+6. espera o banco ficar pronto;
+7. aplica migrations (`alembic upgrade head`);
+8. inicia a API na porta 8000.
+
+Se o `.env` for criado pela primeira vez, o script interrompe a inicializacao para voce revisar credenciais/chaves obrigatorias e executar novamente.
+
+Nas execucoes seguintes, ele reaproveita o cache e pula reinstalacao quando nada mudou.
+
+Para apenas preparar ambiente (sem iniciar a API):
+
+```bash
+./bootstrap.sh --bootstrap-only
+```
+
+ou:
+
+```bash
+make bootstrap-only
+```
+
+Para parar o banco:
+
+```bash
+docker compose down
+```
+
+ou:
+
+```bash
+make down
+```
+
+## API HTTP (FastAPI)
+
+Com a API em execucao, a documentacao interativa fica em `http://127.0.0.1:8000/docs`.
+
+### Endpoints de consulta
+
+- `GET /api/v1/jobs`
+	- Query params opcionais:
+		- `status` (string): filtra por status (`pending`, `ready_for_ai`, `discarded`, `analyzed`)
+		- `min_score` (int): filtra por score minimo de IA
+		- `limit` (int, padrao `20`)
+
+Exemplo:
+
+```bash
+curl "http://127.0.0.1:8000/api/v1/jobs?status=analyzed&min_score=1&limit=10"
+```
+
+### Endpoints de controle (background)
+
+Esses endpoints retornam `202 Accepted` imediatamente e executam o processamento em background, com logs no terminal da API.
+
+- `POST /api/v1/control/sync/ingest`
+	- Query params:
+		- `source` (`all` | `remoteok` | `remotar`, padrao `all`)
+		- `limit` (int, padrao `20`)
+
+Exemplo:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/control/sync/ingest?source=remoteok&limit=5"
+```
+
+- `POST /api/v1/control/sync/analyze`
+	- Query params:
+		- `limit` (int opcional)
+
+Exemplo:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/control/sync/analyze?limit=10"
+```
+
+Observacoes operacionais:
+
+- A analise exige `GEMINI_API_KEY` valida no `.env`.
+- Se houver erro durante a task, a API continua respondendo e o detalhe aparece no log do servidor.
+
 1. Suba o PostgreSQL com `docker compose up -d`.
 2. Instale dependencias com `pip install -e .[dev]`.
 3. Exporte as variaveis do `.env.example`.
