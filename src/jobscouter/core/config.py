@@ -14,6 +14,9 @@ class Settings:
     remotar_base_url: str
     remotar_api_url: str
     user_agent: str
+    gemini_api_key: str
+    gemini_model: str
+    gemini_retry_delay_seconds: float
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -28,6 +31,9 @@ class Settings:
             remotar_base_url=os.getenv("REMOTAR_BASE_URL", "https://remotar.com.br"),
             remotar_api_url=os.getenv("REMOTAR_API_URL", "https://api.remotar.com.br"),
             user_agent=os.getenv("USER_AGENT", "jobscouter-ingestion-bot/0.1"),
+            gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
+            gemini_model=os.getenv("GEMINI_MODEL", "gemini-1.5-flash-latest"),
+            gemini_retry_delay_seconds=float(os.getenv("GEMINI_RETRY_DELAY_SECONDS", "1.5")),
         )
 
 

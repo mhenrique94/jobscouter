@@ -1,0 +1,156 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
+import pytest
+from sqlmodel import Session, SQLModel, create_engine
+
+from jobscouter.core.config import Settings
+from jobscouter.db.models import Job, JobStatus
+from jobscouter.services import analyzer
+from jobscouter.services.analyzer import AIAnalyzerService
+
+
+class _FakeResponse:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+class _FakeModel:
+    def __init__(self, texts: list[str] | None = None, exception: Exception | None = None) -> None:
+        self.texts = texts or []
+        self.exception = exception
+        self.calls = 0
+
+    def generate_content(self, *_args, **_kwargs):
+        self.calls += 1
+        if self.exception is not None and self.calls == 1:
+            raise self.exception
+        if self.texts:
+            return _FakeResponse(self.texts[min(self.calls - 1, len(self.texts) - 1)])
+        return _FakeResponse('{"score": 7, "summary": "match"}')
+
+
+class _FakeResourceExhausted(Exception):
+    pass
+
+
+class _FakeNotFound(Exception):
+    pass
+
+
+def _settings() -> Settings:
+    return Settings(
+        database_url="sqlite://",
+        log_level="INFO",
+        request_timeout=10.0,
+        remoteok_api_url="https://remoteok.com/api",
+        remotar_base_url="https://remotar.com.br",
+        remotar_api_url="https://api.remotar.com.br",
+        user_agent="test-agent",
+        gemini_api_key="test-key",
+        gemini_model="gemini-1.5-flash",
+        gemini_retry_delay_seconds=0.01,
+    )
+
+
+def _build_job(title: str, description_raw: str) -> Job:
+    now = datetime.now(timezone.utc)
+    return Job(
+        external_id="ext-1",
+        title=title,
+        company="Acme",
+        url="https://example.com/job/1",
+        source="remoteok",
+        description_raw=description_raw,
+        location="Remote",
+        salary=None,
+        status=JobStatus.ready_for_ai,
+        filter_reason=None,
+        created_at=now,
+        first_seen_at=now,
+        last_seen_at=now,
+        updated_at=now,
+    )
+
+
+def _configure_fake_google_modules(monkeypatch, fake_model: _FakeModel) -> None:
+    fake_genai = SimpleNamespace(
+        configure=lambda **_kwargs: None,
+        GenerativeModel=lambda _name: fake_model,
+        GenerationConfig=lambda **kwargs: kwargs,
+        list_models=lambda: [],
+    )
+    fake_api_exceptions = SimpleNamespace(ResourceExhausted=_FakeResourceExhausted, NotFound=_FakeNotFound)
+
+    def _fake_import_module(name: str):
+        if name == "google.generativeai":
+            return fake_genai
+        if name == "google.api_core.exceptions":
+            return fake_api_exceptions
+        raise ModuleNotFoundError(name)
+
+    monkeypatch.setattr(analyzer.importlib, "import_module", _fake_import_module)
+
+
+@pytest.mark.asyncio
+async def test_non_dev_job_returns_zero_without_model_call(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    fake_model = _FakeModel()
+    _configure_fake_google_modules(monkeypatch, fake_model)
+
+    with Session(engine) as session:
+        service = AIAnalyzerService(session, settings=_settings())
+        result = await service.analyze_job(_build_job("Contador Senior", "Rotinas contabeis"))
+
+    assert result.score == 0
+    assert "fora de desenvolvimento" in result.summary
+    assert fake_model.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_analyze_job_parses_json_and_clamps_score(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    fake_model = _FakeModel(texts=['{"score": 12, "summary": "Muito aderente"}'])
+    _configure_fake_google_modules(monkeypatch, fake_model)
+
+    with Session(engine) as session:
+        service = AIAnalyzerService(session, settings=_settings())
+        result = await service.analyze_job(_build_job("Full-stack Developer", "Python Django e Vue.js"))
+
+    assert result.score == 10
+    assert result.summary == "Muito aderente"
+    assert fake_model.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_analyze_job_retries_on_resource_exhausted(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    fake_model = _FakeModel(
+        texts=['{"score": 6, "summary": "Boa aderencia"}'],
+        exception=_FakeResourceExhausted("rate limited"),
+    )
+    _configure_fake_google_modules(monkeypatch, fake_model)
+
+    sleep_calls: list[float] = []
+
+    async def _fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr(analyzer.asyncio, "sleep", _fake_sleep)
+
+    with Session(engine) as session:
+        service = AIAnalyzerService(session, settings=_settings())
+        result = await service.analyze_job(_build_job("Backend Python", "APIs em Django"))
+
+    assert result.score == 6
+    assert result.summary == "Boa aderencia"
+    assert fake_model.calls == 2
+    assert sleep_calls

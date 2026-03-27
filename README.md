@@ -1,6 +1,15 @@
-# Jobscouter Ingestion Module
+# Jobscouter: Ingestao + Analise IA
 
-Modulo de ingestao de vagas construido em Python 3.11+, com scrapers extensivos, schema unificado em PostgreSQL e persistencia idempotente.
+Projeto com dois modulos principais em Python 3.11+: ingestao de vagas e analise de compatibilidade por IA.
+
+## Modulos do projeto
+
+- Modulo 1 - Ingestao e filtragem estatica:
+	- Coleta vagas das fontes suportadas, persiste no PostgreSQL com idempotencia e classifica status inicial (`pending`, `ready_for_ai`, `discarded`).
+	- Comando: `jobscouter-ingest`.
+- Modulo 2 - Analise por IA:
+	- Processa vagas `ready_for_ai`, calcula score de compatibilidade, gera resumo e fecha o processamento com status `analyzed`.
+	- Comando: `jobscouter-analyze`.
 
 ## Arquitetura
 
@@ -9,9 +18,10 @@ Modulo de ingestao de vagas construido em Python 3.11+, com scrapers extensivos,
 - `RemotarScraper`: faz crawling HTML da Remotar e enriquece detalhes por vaga.
 - `JobIngestionService`: normaliza o fluxo de persistencia e garante idempotencia.
 - `JobFilterService`: classifica vagas com filtros estaticos antes da analise por IA.
+- `AIAnalyzerService`: analisa vagas `ready_for_ai` com Gemini e atribui score de compatibilidade.
 - `Job`: schema SQLModel para PostgreSQL, com constraints para deduplicacao e status de processamento.
 
-## Filtragem estatica pre-IA
+## Modulo 1: Ingestao e Filtragem Estatica
 
 Após cada upsert, a vaga e classificada imediatamente para reduzir custo de processamento de IA.
 
@@ -51,8 +61,82 @@ O matching e case-insensitive sobre titulo + descricao da vaga.
 3. Exporte as variaveis do `.env.example`.
 4. Rode as migrations com `alembic upgrade head`.
 5. Execute a ingestao com `jobscouter-ingest --source all --limit 20`.
+6. Execute a analise com `jobscouter-analyze --limit 20`.
 
-## Controle de execucao da busca
+## Modulo 2: Analise por IA (Gemini)
+
+O comando `jobscouter-analyze` processa apenas vagas com `status=ready_for_ai`.
+Para cada vaga processada, o sistema preenche:
+
+- `ai_score`: score inteiro de 0 a 10.
+- `ai_summary`: resumo curto da analise.
+- `ai_analysis_at`: timestamp da analise.
+
+Ao concluir a vaga, o status e atualizado para `analyzed`.
+
+### Regras de robustez
+
+- Prompt objetivo e seco, focado em aderencia tecnica ao perfil alvo.
+- Retorno exigido em JSON estrito com `score` e `summary`.
+- Vagas claramente nao-dev (ex.: contador, vendedor, design) recebem `score=0` imediatamente.
+- Em rate limit (`ResourceExhausted`), o servico aplica delay curto e retry.
+- Se `gemini-1.5-flash` nao estiver disponivel para a chave atual, o servico tenta fallbacks Flash disponiveis automaticamente.
+
+### Variaveis de ambiente da IA
+
+- `GEMINI_API_KEY`: chave da API Gemini.
+- `GEMINI_MODEL`: modelo preferencial (padrao: `gemini-1.5-flash-latest`).
+- `GEMINI_RETRY_DELAY_SECONDS`: atraso do retry em rate limit (padrao: `1.5`).
+
+### Configuracao recomendada no .env
+
+Use este baseline para evitar erro de modelo indisponivel:
+
+```env
+GEMINI_API_KEY=<sua_chave>
+GEMINI_MODEL=models/gemini-2.5-flash
+GEMINI_RETRY_DELAY_SECONDS=1.5
+```
+
+### Exemplo de execucao
+
+- Ingestao: `jobscouter-ingest --source all --limit 20`
+- Analise: `jobscouter-analyze --limit 20`
+
+### Troubleshooting (IA)
+
+- Erro `GEMINI_API_KEY nao configurada`:
+	- Garanta que `GEMINI_API_KEY` esteja definida no `.env`.
+	- Rode com: `set -a && source .env && set +a` antes do comando.
+
+- Erro `NotFound ... model ... is not found for API version v1beta`:
+	- Algumas chaves nao possuem `gemini-1.5-flash` habilitado.
+	- O servico tenta fallback automatico para modelos Flash disponiveis.
+	- Se quiser forcar um modelo conhecido na sua conta, defina `GEMINI_MODEL` (ex.: `models/gemini-2.5-flash`).
+
+- Warning de deprecacao da biblioteca `google.generativeai`:
+	- O warning nao bloqueia execucao.
+	- O projeto segue este pacote por compatibilidade atual; migracao futura para `google.genai` e recomendada.
+
+### Listar modelos disponiveis da sua chave
+
+Use o comando abaixo para descobrir quais modelos Flash aceitam `generateContent` na sua conta:
+
+```bash
+set -a && source .env && set +a
+/home/marcelo/Github/jobscouter/.venv/bin/python - <<'PY'
+import os
+import google.generativeai as genai
+
+genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+for model in genai.list_models():
+		methods = getattr(model, "supported_generation_methods", []) or []
+		if "generateContent" in methods and "flash" in model.name.lower():
+				print(model.name)
+PY
+```
+
+## Parametros do Modulo 1 (Ingestao)
 
 A busca e finita por padrao: sem `--continuous`, o comando executa 1 ciclo e encerra.
 

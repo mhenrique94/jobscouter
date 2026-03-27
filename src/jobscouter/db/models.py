@@ -45,6 +45,12 @@ class Job(SQLModel, table=True):
         ),
     )
     filter_reason: Optional[str] = Field(default=None, max_length=255)
+    ai_score: Optional[int] = Field(default=None)
+    ai_summary: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    ai_analysis_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
     created_at: datetime = Field(
         default_factory=utcnow,
         sa_column=Column(DateTime(timezone=True), nullable=False),
