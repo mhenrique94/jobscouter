@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling>=1.26.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jobscouter"
+version = "0.1.0"
+description = "Modulo de ingestao de vagas com scrapers extensivos e persistencia idempotente."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [
+  { name = "GitHub Copilot" }
+]
+dependencies = [
+  "alembic>=1.14.0",
+  "beautifulsoup4>=4.12.3",
+  "httpx>=0.28.1",
+  "psycopg[binary]>=3.2.6",
+  "sqlalchemy>=2.0.37",
+  "sqlmodel>=0.0.22"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.5",
+  "pytest-asyncio>=0.26.0"
+]
+
+[project.scripts]
+jobscouter-ingest = "jobscouter.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jobscouter"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+asyncio_mode = "auto"

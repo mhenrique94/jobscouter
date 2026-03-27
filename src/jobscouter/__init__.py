@@ -1,0 +1,1 @@
+"""Jobscouter ingestion package."""
