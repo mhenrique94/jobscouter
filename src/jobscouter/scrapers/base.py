@@ -19,7 +19,7 @@ class BaseScraper(ABC):
         self.logger = get_logger(f"jobscouter.scrapers.{self.source_name}")
 
     @abstractmethod
-    async def fetch_jobs(self, limit: int | None = None) -> list[JobPayload]:
+    async def fetch_jobs(self, limit: int | None = None, max_pages: int | None = None) -> list[JobPayload]:
         raise NotImplementedError
 
     async def _get_text(self, url: str) -> str:

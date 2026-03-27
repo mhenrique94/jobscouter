@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from time import monotonic
 
 import httpx
 
@@ -13,9 +14,35 @@ from jobscouter.scrapers.remoteok import RemoteOKScraper
 from jobscouter.services.ingestion import JobIngestionService
 
 
-async def run_ingestion(source: str, limit: int | None) -> None:
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("O valor deve ser um inteiro positivo.")
+    return parsed
+
+
+def _positive_float(value: str) -> float:
+    parsed = float(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("O valor deve ser um numero positivo.")
+    return parsed
+
+
+async def run_ingestion(
+    source: str,
+    limit: int | None,
+    max_pages: int | None,
+    continuous: bool,
+    poll_interval_seconds: float,
+    max_cycles: int | None,
+    max_duration_seconds: float | None,
+    max_empty_cycles: int | None,
+) -> None:
     settings = get_settings()
     logger = get_logger("jobscouter.main")
+    cycle = 0
+    empty_cycles = 0
+    started_at = monotonic()
 
     async with httpx.AsyncClient(
         headers={"User-Agent": settings.user_agent},
@@ -29,13 +56,54 @@ async def run_ingestion(source: str, limit: int | None) -> None:
 
         selected_sources = list(scrapers.keys()) if source == "all" else [source]
 
-        with session_scope() as session:
-            ingestion_service = JobIngestionService(session)
-            for selected_source in selected_sources:
-                logger.info("Executando scraper %s", selected_source)
-                jobs = await scrapers[selected_source].fetch_jobs(limit=limit)
-                stats = ingestion_service.ingest_jobs(jobs)
-                logger.info("Resumo %s: %s", selected_source, stats)
+        while True:
+            cycle += 1
+            new_or_updated_in_cycle = 0
+            logger.info("Iniciando ciclo de ingestao %s", cycle)
+
+            with session_scope() as session:
+                ingestion_service = JobIngestionService(session)
+                for selected_source in selected_sources:
+                    logger.info("Executando scraper %s", selected_source)
+                    jobs = await scrapers[selected_source].fetch_jobs(
+                        limit=limit,
+                        max_pages=max_pages if selected_source == "remotar" else None,
+                    )
+                    stats = ingestion_service.ingest_jobs(jobs)
+                    logger.info("Resumo %s: %s", selected_source, stats)
+                    new_or_updated_in_cycle += stats.inserted + stats.updated
+
+            if not continuous:
+                logger.info("Modo continuo desativado. Encerrando apos o primeiro ciclo.")
+                break
+
+            if max_cycles is not None and cycle >= max_cycles:
+                logger.info("Encerrando: max_cycles atingido (%s).", max_cycles)
+                break
+
+            elapsed_seconds = monotonic() - started_at
+            if max_duration_seconds is not None and elapsed_seconds >= max_duration_seconds:
+                logger.info("Encerrando: max_duration_seconds atingido (%s).", max_duration_seconds)
+                break
+
+            if max_empty_cycles is not None:
+                if new_or_updated_in_cycle == 0:
+                    empty_cycles += 1
+                    logger.info(
+                        "Ciclo %s sem vagas novas/atualizadas (%s/%s ciclos vazios).",
+                        cycle,
+                        empty_cycles,
+                        max_empty_cycles,
+                    )
+                else:
+                    empty_cycles = 0
+
+                if empty_cycles >= max_empty_cycles:
+                    logger.info("Encerrando: max_empty_cycles atingido (%s).", max_empty_cycles)
+                    break
+
+            logger.info("Aguardando %s segundos para o proximo ciclo.", poll_interval_seconds)
+            await asyncio.sleep(poll_interval_seconds)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -46,15 +114,66 @@ def build_parser() -> argparse.ArgumentParser:
         default="all",
         help="Fonte especifica a ser executada.",
     )
-    parser.add_argument("--limit", type=int, default=None, help="Limita a quantidade de vagas por fonte.")
+    parser.add_argument("--limit", type=_positive_int, default=None, help="Limita a quantidade de vagas por fonte.")
+    parser.add_argument(
+        "--max-pages",
+        type=_positive_int,
+        default=None,
+        help="Quantidade maxima de paginas na listagem via API da Remotar.",
+    )
+    parser.add_argument(
+        "--continuous",
+        action="store_true",
+        help="Mantem a busca rodando em ciclos ate atingir um criterio de parada.",
+    )
+    parser.add_argument(
+        "--poll-interval-seconds",
+        type=_positive_float,
+        default=300,
+        help="Intervalo entre ciclos em modo continuo.",
+    )
+    parser.add_argument(
+        "--max-cycles",
+        type=_positive_int,
+        default=None,
+        help="Quantidade maxima de ciclos no modo continuo.",
+    )
+    parser.add_argument(
+        "--max-duration-seconds",
+        type=_positive_float,
+        default=None,
+        help="Tempo maximo total de execucao no modo continuo.",
+    )
+    parser.add_argument(
+        "--max-empty-cycles",
+        type=_positive_int,
+        default=None,
+        help="Encerra apos N ciclos seguidos sem vagas novas/atualizadas.",
+    )
     return parser
 
 
 def main() -> None:
     settings = get_settings()
     configure_logging(settings.log_level)
-    args = build_parser().parse_args()
-    asyncio.run(run_ingestion(source=args.source, limit=args.limit))
+    parser = build_parser()
+    args = parser.parse_args()
+    if not args.continuous:
+        if args.max_cycles is not None or args.max_duration_seconds is not None or args.max_empty_cycles is not None:
+            parser.error("--max-cycles, --max-duration-seconds e --max-empty-cycles exigem --continuous.")
+
+    asyncio.run(
+        run_ingestion(
+            source=args.source,
+            limit=args.limit,
+            max_pages=args.max_pages,
+            continuous=args.continuous,
+            poll_interval_seconds=args.poll_interval_seconds,
+            max_cycles=args.max_cycles,
+            max_duration_seconds=args.max_duration_seconds,
+            max_empty_cycles=args.max_empty_cycles,
+        )
+    )
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import re
+from urllib.parse import urlencode
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup, Tag
@@ -30,11 +31,11 @@ class RemotarListingItem:
 class RemotarScraper(BaseScraper):
     source_name = "remotar"
 
-    async def fetch_jobs(self, limit: int | None = None) -> list[JobPayload]:
+    async def fetch_jobs(self, limit: int | None = None, max_pages: int | None = None) -> list[JobPayload]:
         html = await self._get_text(self.settings.remotar_base_url)
         listings = self._extract_listing_items(html)
         if not listings:
-            listings = await self._extract_listing_items_from_api(limit=limit)
+            listings = await self._extract_listing_items_from_api(limit=limit, max_pages=max_pages)
 
         jobs: list[JobPayload] = []
 
@@ -86,46 +87,86 @@ class RemotarScraper(BaseScraper):
 
         return items
 
-    async def _extract_listing_items_from_api(self, limit: int | None = None) -> list[RemotarListingItem]:
+    async def _extract_listing_items_from_api(
+        self,
+        limit: int | None = None,
+        max_pages: int | None = None,
+    ) -> list[RemotarListingItem]:
         api_url = f"{self.settings.remotar_api_url}/jobs"
-        params: dict[str, int | str] = {"active": "true", "page": 1}
-        if limit is not None:
-            params["limit"] = limit
-
-        data = await self._get_json(f"{api_url}?" + "&".join(f"{k}={v}" for k, v in params.items()))
-        rows = data.get("data") if isinstance(data, dict) else None
-        if not isinstance(rows, list):
-            self.logger.warning("Resposta inesperada da API da Remotar ao buscar listagem")
-            return []
-
         items: list[RemotarListingItem] = []
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
+        seen_ids: set[str] = set()
+        page = 1
 
-            job_id = row.get("id")
-            title = row.get("title")
-            if not job_id or not title:
-                continue
+        while True:
+            if max_pages is not None and page > max_pages:
+                break
 
-            company = None
-            if isinstance(row.get("company"), dict):
-                company = row["company"].get("name")
-            company = company or row.get("companyDisplayName")
+            params: dict[str, int | str] = {"active": "true", "page": page}
+            if limit is not None:
+                params["limit"] = limit
 
-            url = row.get("externalLink") or f"{self.settings.remotar_base_url}/job/{job_id}"
-            items.append(
-                RemotarListingItem(
-                    external_id=str(job_id),
-                    title=title,
-                    company=company,
-                    url=url,
-                    api_payload=row,
+            data = await self._get_json(f"{api_url}?{urlencode(params)}")
+            rows = data.get("data") if isinstance(data, dict) else None
+            if not isinstance(rows, list):
+                self.logger.warning("Resposta inesperada da API da Remotar ao buscar listagem")
+                break
+
+            if not rows:
+                break
+
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+
+                job_id = row.get("id")
+                title = row.get("title")
+                if not job_id or not title:
+                    continue
+
+                external_id = str(job_id)
+                if external_id in seen_ids:
+                    continue
+
+                company = None
+                if isinstance(row.get("company"), dict):
+                    company = row["company"].get("name")
+                company = company or row.get("companyDisplayName")
+
+                url = row.get("externalLink") or f"{self.settings.remotar_base_url}/job/{job_id}"
+                items.append(
+                    RemotarListingItem(
+                        external_id=external_id,
+                        title=title,
+                        company=company,
+                        url=url,
+                        api_payload=row,
+                    )
                 )
-            )
+                seen_ids.add(external_id)
+
+                if limit is not None and len(items) >= limit:
+                    self.logger.info("Listagem da Remotar atingiu o limite configurado (%s)", limit)
+                    return items
+
+            last_page = self._last_page_from_response(data)
+            if last_page is not None and page >= last_page:
+                break
+
+            page += 1
 
         self.logger.info("Listagem da Remotar carregada via API com %s vagas", len(items))
         return items
+
+    def _last_page_from_response(self, data: object) -> int | None:
+        if not isinstance(data, dict):
+            return None
+
+        meta = data.get("meta")
+        if not isinstance(meta, dict):
+            return None
+
+        value = meta.get("last_page")
+        return value if isinstance(value, int) and value > 0 else None
 
     async def _fetch_job_detail(self, item: RemotarListingItem) -> JobPayload:
         html = await self._get_text(item.url)

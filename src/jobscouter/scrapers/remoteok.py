@@ -9,7 +9,7 @@ from jobscouter.scrapers.base import BaseScraper
 class RemoteOKScraper(BaseScraper):
     source_name = "remoteok"
 
-    async def fetch_jobs(self, limit: int | None = None) -> list[JobPayload]:
+    async def fetch_jobs(self, limit: int | None = None, max_pages: int | None = None) -> list[JobPayload]:
         payload = await self._get_json(self.settings.remoteok_api_url)
         jobs: list[JobPayload] = []
 

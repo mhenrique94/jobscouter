@@ -61,6 +61,48 @@ API_LISTING = {
     ],
 }
 
+API_LISTING_PAGE_1 = {
+  "meta": {"total": 3, "per_page": 1, "current_page": 1, "last_page": 3},
+  "data": [
+    {
+      "id": 1001,
+      "title": "Backend Engineer I",
+      "description": "<p>Backend work</p>",
+      "createdAt": "2026-03-26T16:01:06.642-03:00",
+      "externalLink": "https://example.com/apply/1001",
+      "company": {"name": "Acme 1"},
+    }
+  ],
+}
+
+API_LISTING_PAGE_2 = {
+  "meta": {"total": 3, "per_page": 1, "current_page": 2, "last_page": 3},
+  "data": [
+    {
+      "id": 1002,
+      "title": "Backend Engineer II",
+      "description": "<p>Backend work 2</p>",
+      "createdAt": "2026-03-26T16:01:06.642-03:00",
+      "externalLink": "https://example.com/apply/1002",
+      "company": {"name": "Acme 2"},
+    }
+  ],
+}
+
+API_LISTING_PAGE_3 = {
+  "meta": {"total": 3, "per_page": 1, "current_page": 3, "last_page": 3},
+  "data": [
+    {
+      "id": 1003,
+      "title": "Backend Engineer III",
+      "description": "<p>Backend work 3</p>",
+      "createdAt": "2026-03-26T16:01:06.642-03:00",
+      "externalLink": "https://example.com/apply/1003",
+      "company": {"name": "Acme 3"},
+    }
+  ],
+}
+
 
 @pytest.mark.asyncio
 async def test_remotar_parses_listing_and_detail() -> None:
@@ -129,3 +171,44 @@ async def test_remotar_falls_back_to_api_when_html_has_no_jobs() -> None:
     assert jobs[0].url == "https://example.com/apply"
     assert jobs[0].location == "Sao Paulo, SP, Brasil"
     assert jobs[0].salary is None
+
+
+@pytest.mark.asyncio
+async def test_remotar_api_paginates_and_respects_max_pages() -> None:
+    requests_by_page: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url == "https://remotar.com.br":
+            return httpx.Response(200, text=EMPTY_HTML)
+        if url.startswith("https://api.remotar.com.br/jobs"):
+            parsed = urlparse(url)
+            query = parse_qs(parsed.query)
+            page = int(query.get("page", ["1"])[0])
+            requests_by_page.append(page)
+            if page == 1:
+                return httpx.Response(200, json=API_LISTING_PAGE_1)
+            if page == 2:
+                return httpx.Response(200, json=API_LISTING_PAGE_2)
+            if page == 3:
+                return httpx.Response(200, json=API_LISTING_PAGE_3)
+            return httpx.Response(200, json={"meta": {"last_page": 3}, "data": []})
+        return httpx.Response(404)
+
+    settings = Settings(
+        database_url="sqlite://",
+        log_level="INFO",
+        request_timeout=20,
+        remoteok_api_url="https://remoteok.com/api",
+        remotar_base_url="https://remotar.com.br",
+        remotar_api_url="https://api.remotar.com.br",
+        user_agent="test-agent",
+    )
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport, follow_redirects=True) as client:
+        scraper = RemotarScraper(client=client, settings=settings)
+        jobs = await scraper.fetch_jobs(max_pages=2)
+
+    assert requests_by_page == [1, 2]
+    assert [job.external_id for job in jobs] == ["1001", "1002"]
