@@ -12,12 +12,21 @@ from jobscouter.db.models import Job, JobStatus
 router = APIRouter(tags=["jobs"])
 
 
-@router.get("/jobs", response_model=list[Job])
+@router.get(
+    "/jobs",
+    response_model=list[Job],
+    summary="Listar vagas",
+    description=(
+        "Retorna vagas persistidas com filtros opcionais por status e score minimo de IA. "
+        "Use para explorar rapidamente o pipeline de ingestao e analise."
+    ),
+    response_description="Lista de vagas encontradas.",
+)
 def list_jobs(
     session: Annotated[Session, Depends(get_session)],
-    status: str | None = Query(default=None),
-    min_score: int | None = Query(default=None),
-    limit: int = Query(default=20, ge=1),
+    status: str | None = Query(default=None, description="Filtra por status (pending, ready_for_ai, discarded, analyzed)."),
+    min_score: int | None = Query(default=None, description="Filtra vagas com ai_score maior ou igual ao valor informado."),
+    limit: int = Query(default=20, ge=1, description="Quantidade maxima de vagas retornadas."),
 ) -> list[Job]:
     statement = select(Job)
 

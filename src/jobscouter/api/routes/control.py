@@ -103,23 +103,44 @@ async def _run_analyze_sync(limit: int | None) -> None:
         logger.exception("[control.analyze] Falha inesperada na task: %s", exc)
 
 
-@router.post("/sync/ingest", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/sync/ingest",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Disparar ingestao em background",
+    description=(
+        "Inicia o processo de coleta e persistencia de vagas em background. "
+        "A resposta e imediata (202) e o progresso pode ser acompanhado pelos logs da API."
+    ),
+    response_description="Confirmacao de que a ingestao foi enfileirada.",
+)
 def sync_ingest(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_session),
-    source: Literal["all", "remoteok", "remotar"] = Query(default="all"),
-    limit: int = Query(default=20, ge=1),
+    source: Literal["all", "remoteok", "remotar"] = Query(
+        default="all",
+        description="Define a fonte de vagas a sincronizar.",
+    ),
+    limit: int = Query(default=20, ge=1, description="Limite de vagas por fonte no ciclo atual."),
 ) -> dict[str, str]:
     _ = db
     background_tasks.add_task(_run_ingest_sync, source, limit)
     return {"detail": "Ingestao iniciada em background."}
 
 
-@router.post("/sync/analyze", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/sync/analyze",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Disparar analise de IA em background",
+    description=(
+        "Inicia a analise de vagas com status ready_for_ai em background. "
+        "A resposta e imediata (202) e o resultado final e salvo no banco."
+    ),
+    response_description="Confirmacao de que a analise foi enfileirada.",
+)
 def sync_analyze(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_session),
-    limit: int | None = Query(default=None, ge=1),
+    limit: int | None = Query(default=None, ge=1, description="Quantidade maxima de vagas a analisar nesta execucao."),
 ) -> dict[str, str]:
     _ = db
     background_tasks.add_task(_run_analyze_sync, limit)

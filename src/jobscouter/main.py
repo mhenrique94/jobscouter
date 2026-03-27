@@ -2,17 +2,18 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from importlib import import_module
 from pathlib import Path
 from time import monotonic
 
 import httpx
+from sqlmodel import Session
 
 from jobscouter.core.config import get_settings
 from jobscouter.core.logging import configure_logging, get_logger
 from jobscouter.db.session import session_scope
 from jobscouter.scrapers.remotar import RemotarScraper
 from jobscouter.scrapers.remoteok import RemoteOKScraper
+from jobscouter.services.filter import FilterConfigService
 from jobscouter.services.ingestion import IngestionStats, JobIngestionService
 
 
@@ -30,41 +31,9 @@ def _positive_float(value: str) -> float:
     return parsed
 
 
-def _load_search_terms(filters_path: Path | None = None) -> list[str]:
-    yaml_module = _load_yaml_module()
-    if yaml_module is None:
-        return []
-
-    resolved_filters_path = filters_path or Path(__file__).resolve().parents[2] / "filters.yaml"
-    try:
-        with resolved_filters_path.open("r", encoding="utf-8") as stream:
-            payload = yaml_module.safe_load(stream) or {}
-    except FileNotFoundError:
-        return []
-    except Exception:
-        return []
-
-    if not isinstance(payload, dict):
-        return []
-
-    raw_terms = payload.get("search_terms")
-    if not isinstance(raw_terms, list):
-        return []
-
-    terms: list[str] = []
-    for term in raw_terms:
-        if isinstance(term, str):
-            normalized = term.strip()
-            if normalized:
-                terms.append(normalized)
-    return terms
-
-
-def _load_yaml_module():
-    try:
-        return import_module("yaml")
-    except ModuleNotFoundError:
-        return None
+def _load_search_terms(session: Session, filters_path: Path | None = None) -> list[str]:
+    config = FilterConfigService(session, filters_path=filters_path).get_active_config()
+    return list(config.search_terms)
 
 
 async def run_ingestion(
@@ -83,7 +52,11 @@ async def run_ingestion(
     cycle = 0
     empty_cycles = 0
     started_at = monotonic()
-    search_terms = [keyword.strip()] if keyword and keyword.strip() else _load_search_terms()
+    if keyword and keyword.strip():
+        search_terms = [keyword.strip()]
+    else:
+        with session_scope() as session:
+            search_terms = _load_search_terms(session)
     if not search_terms:
         logger.warning("Nenhum termo de busca configurado; executando sem termo explicito.")
         search_terms = [""]

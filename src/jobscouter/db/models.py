@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import Column, DateTime, Enum as SQLEnum, Index, Text, UniqueConstraint
+from sqlalchemy import JSON, Column, DateTime, Enum as SQLEnum, Index, Text, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -64,6 +64,19 @@ class Job(SQLModel, table=True):
         default_factory=utcnow,
         sa_column=Column(DateTime(timezone=True), nullable=False),
     )
+    updated_at: datetime = Field(
+        default_factory=utcnow,
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
+
+
+class FilterConfig(SQLModel, table=True):
+    __tablename__ = "filter_config"
+
+    id: int = Field(default=1, primary_key=True)
+    search_terms: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    include_keywords: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    exclude_keywords: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     updated_at: datetime = Field(
         default_factory=utcnow,
         sa_column=Column(DateTime(timezone=True), nullable=False),

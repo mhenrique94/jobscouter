@@ -7,7 +7,7 @@ import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
 from jobscouter.core.config import Settings
-from jobscouter.db.models import Job, JobStatus
+from jobscouter.db.models import FilterConfig, Job, JobStatus
 from jobscouter.services import analyzer
 from jobscouter.services.analyzer import AIAnalyzerService
 
@@ -198,6 +198,41 @@ filters:
     assert "Software Development / Engineering" in prompt
     assert "Atribua nota de 1 a 10 usando include_keywords (Python, Django, Vue)" in prompt
     assert '"score"' in prompt and '"summary"' in prompt
+
+
+def test_build_prompt_prioritizes_database_filter_config(monkeypatch, tmp_path) -> None:
+    filters_path = tmp_path / "filters.yaml"
+    filters_path.write_text(
+        """
+filters:
+  exclude_keywords: ["Python"]
+  include_keywords: ["Java"]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    fake_model = _FakeModel()
+    _configure_fake_google_modules(monkeypatch, fake_model)
+
+    with Session(engine) as session:
+        session.add(
+            FilterConfig(
+                id=1,
+                search_terms=["python"],
+                exclude_keywords=["Java"],
+                include_keywords=["Python", "Django"],
+            )
+        )
+        session.flush()
+
+        service = AIAnalyzerService(session, settings=_settings(), filters_path=filters_path)
+        prompt = service._build_prompt(_build_job("Backend Developer", "Atuacao com APIs"))
+
+    assert "TECNOLOGIAS DESEJADAS (CORE STACK): Python, Django" in prompt
+    assert "TECNOLOGIAS/TERMOS A EVITAR: Java" in prompt
 
 
 @pytest.mark.asyncio

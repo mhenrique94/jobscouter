@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
-from jobscouter.db.models import Job, JobStatus
+from jobscouter.db.models import FilterConfig, Job, JobStatus
 from jobscouter.services.filter import JobFilterService
 
 
@@ -191,4 +191,42 @@ filters:
 
         assert result == JobStatus.analyzed
         assert job.status == JobStatus.analyzed
+        assert job.filter_reason is None
+
+
+@pytest.mark.asyncio
+async def test_database_rules_have_priority_over_yaml(tmp_path) -> None:
+    filters_path = tmp_path / "filters.yaml"
+    filters_path.write_text(
+        """
+filters:
+  exclude_keywords: ["Python"]
+  include_keywords: ["Java"]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        session.add(
+            FilterConfig(
+                id=1,
+                search_terms=["python"],
+                exclude_keywords=["Java"],
+                include_keywords=["Python"],
+            )
+        )
+        session.flush()
+
+        job = _build_job("Desenvolvedor", "Atuacao com Python")
+        session.add(job)
+        session.flush()
+
+        service = JobFilterService(session, filters_path=filters_path)
+        result = await service.classify_job(job)
+
+        assert result == JobStatus.ready_for_ai
+        assert job.status == JobStatus.ready_for_ai
         assert job.filter_reason is None
