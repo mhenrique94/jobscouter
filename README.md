@@ -83,7 +83,8 @@ Ao concluir a vaga, o status e atualizado para `analyzed`.
 
 ### Regras de robustez
 
-- Prompt objetivo e seco, focado em aderencia tecnica ao perfil alvo.
+- Prompt dinamico: injeta `include_keywords` e `exclude_keywords` do `filters.yaml` para orientar peso tecnico e penalizacoes.
+- O `summary` pede justificativa breve da nota antes da descricao da vaga.
 - Retorno exigido em JSON estrito com `score` e `summary`.
 - Vagas claramente nao-dev (ex.: contador, vendedor, design) recebem `score=0` imediatamente.
 - Em rate limit (`ResourceExhausted`), o servico aplica delay curto e retry.
@@ -101,7 +102,7 @@ Use este baseline para evitar erro de modelo indisponivel:
 
 ```env
 GEMINI_API_KEY=<sua_chave>
-GEMINI_MODEL=models/gemini-2.5-flash
+GEMINI_MODEL=models/gemini-2.5-flash-lite
 GEMINI_RETRY_DELAY_SECONDS=1.5
 ```
 

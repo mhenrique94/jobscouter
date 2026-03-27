@@ -40,6 +40,19 @@ class _FakeNotFound(Exception):
     pass
 
 
+class _AlwaysResourceExhaustedModel:
+    def generate_content(self, *_args, **_kwargs):
+        raise _FakeResourceExhausted("quota exceeded")
+
+
+class _SuccessModel:
+    def __init__(self, text: str = '{"score": 4, "summary": "Fallback funcionou"}') -> None:
+        self.text = text
+
+    def generate_content(self, *_args, **_kwargs):
+        return _FakeResponse(self.text)
+
+
 def _settings() -> Settings:
     return Settings(
         database_url="sqlite://",
@@ -50,7 +63,7 @@ def _settings() -> Settings:
         remotar_api_url="https://api.remotar.com.br",
         user_agent="test-agent",
         gemini_api_key="test-key",
-        gemini_model="gemini-1.5-flash",
+        gemini_model="models/gemini-2.5-flash-lite",
         gemini_retry_delay_seconds=0.01,
     )
 
@@ -152,6 +165,79 @@ async def test_non_dev_keyword_still_matches_full_word(monkeypatch) -> None:
     assert fake_model.calls == 0
 
 
+def test_build_prompt_includes_filter_keywords_from_yaml(monkeypatch, tmp_path) -> None:
+    filters_path = tmp_path / "filters.yaml"
+    filters_path.write_text(
+        """
+filters:
+  exclude_keywords: ["Presencial", "Java"]
+  include_keywords: ["Python", "Django", "Vue"]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    fake_model = _FakeModel()
+    _configure_fake_google_modules(monkeypatch, fake_model)
+
+    with Session(engine) as session:
+        service = AIAnalyzerService(session, settings=_settings(), filters_path=filters_path)
+        prompt = service._build_prompt(_build_job("Backend Developer", "Atuacao com APIs"))
+
+    assert "TECNOLOGIAS DESEJADAS (CORE STACK): Python, Django, Vue" in prompt
+    assert "TECNOLOGIAS/TERMOS A EVITAR: Presencial, Java" in prompt
+    assert "LOCALIZACAO DO CANDIDATO: Brasil" in prompt
+    assert "REGRAS DE VETO DE LOCALIZACAO (prioridade maxima):" in prompt
+    assert "remota e restrita ao Brasil/Brazil, ela e elegivel" in prompt
+    assert "remota e restrita a LATAM/America Latina, ela e elegivel" in prompt
+    assert "Remote Global/Worldwide/Anywhere, ela e elegivel" in prompt
+    assert "[VETO - Localizacao]" in prompt
+    assert "REGRAS DE VETO DE FUNCAO:" in prompt
+    assert "Software Development / Engineering" in prompt
+    assert "Atribua nota de 1 a 10 usando include_keywords (Python, Django, Vue)" in prompt
+    assert '"score"' in prompt and '"summary"' in prompt
+
+
+@pytest.mark.asyncio
+async def test_non_dev_correlated_role_returns_zero_without_model_call(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    fake_model = _FakeModel()
+    _configure_fake_google_modules(monkeypatch, fake_model)
+
+    with Session(engine) as session:
+        service = AIAnalyzerService(session, settings=_settings())
+        result = await service.analyze_job(
+            _build_job("Data Scientist", "Modelagem estatistica e experimentos")
+        )
+
+    assert result.score == 0
+    assert "fora de desenvolvimento" in result.summary
+    assert fake_model.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_non_dev_sales_keyword_does_not_match_inside_salesforce(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    fake_model = _FakeModel(texts=['{"score": 7, "summary": "Boa aderencia"}'])
+    _configure_fake_google_modules(monkeypatch, fake_model)
+
+    with Session(engine) as session:
+        service = AIAnalyzerService(session, settings=_settings())
+        result = await service.analyze_job(
+            _build_job("Backend Engineer", "Integracao com Salesforce e APIs Python")
+        )
+
+    assert result.score == 7
+    assert result.summary == "Boa aderencia"
+    assert fake_model.calls == 1
+
+
 @pytest.mark.asyncio
 async def test_analyze_job_parses_json_and_clamps_score(monkeypatch) -> None:
     engine = create_engine("sqlite://")
@@ -194,4 +280,51 @@ async def test_analyze_job_retries_on_resource_exhausted(monkeypatch) -> None:
     assert result.score == 6
     assert result.summary == "Boa aderencia"
     assert fake_model.calls == 2
+    assert sleep_calls
+
+
+@pytest.mark.asyncio
+async def test_switches_model_when_resource_exhausted(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    created_models: list[str] = []
+
+    def _model_factory(name: str):
+        created_models.append(name)
+        if len(created_models) == 1:
+            return _AlwaysResourceExhaustedModel()
+        return _SuccessModel('{"score": 5, "summary": "Usou fallback de modelo"}')
+
+    fake_genai = SimpleNamespace(
+        configure=lambda **_kwargs: None,
+        GenerativeModel=_model_factory,
+        GenerationConfig=lambda **kwargs: kwargs,
+        list_models=lambda: [],
+    )
+    fake_api_exceptions = SimpleNamespace(ResourceExhausted=_FakeResourceExhausted, NotFound=_FakeNotFound)
+
+    def _fake_import_module(name: str):
+        if name == "google.generativeai":
+            return fake_genai
+        if name == "google.api_core.exceptions":
+            return fake_api_exceptions
+        raise ModuleNotFoundError(name)
+
+    monkeypatch.setattr(analyzer.importlib, "import_module", _fake_import_module)
+
+    sleep_calls: list[float] = []
+
+    async def _fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr(analyzer.asyncio, "sleep", _fake_sleep)
+
+    with Session(engine) as session:
+        service = AIAnalyzerService(session, settings=_settings())
+        result = await service.analyze_job(_build_job("Backend Python", "APIs"))
+
+    assert result.score == 5
+    assert result.summary == "Usou fallback de modelo"
+    assert len(created_models) >= 2
     assert sleep_calls

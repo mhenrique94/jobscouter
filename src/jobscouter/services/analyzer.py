@@ -5,6 +5,7 @@ import importlib
 import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from sqlmodel import Session
@@ -12,9 +13,11 @@ from sqlmodel import Session
 from jobscouter.core.config import Settings, get_settings
 from jobscouter.core.logging import get_logger
 from jobscouter.db.models import Job
+from jobscouter.services.filter import JobFilterService
 
 
 PROFILE_TEXT = "Full-stack Developer, Python (Django), Vue.js, PostgreSQL, Linux, Nível Pleno"
+CANDIDATE_LOCATION_TEXT = "Brasil"
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,23 +27,52 @@ class AIAnalysisResult:
 
 
 class AIAnalyzerService:
+    LOW_COST_MODEL_FAMILIES: tuple[str, ...] = (
+        "gemini-2.5-flash-lite",
+        "gemini-2.5-flash",
+    )
+    DEFAULT_LOW_COST_MODELS: tuple[str, ...] = (
+        "models/gemini-2.5-flash-lite",
+        "gemini-2.5-flash-lite",
+        "models/gemini-2.5-flash",
+        "gemini-2.5-flash",
+    )
     NON_DEV_KEYWORDS: tuple[str, ...] = (
         "contador",
         "contabil",
         "contabilidade",
+        "data science",
+        "cientista de dados",
+        "data scientist",
+        "data engineering",
+        "engenheiro de dados",
+        "data engineer",
+        "analytics engineer",
+        "business intelligence",
+        "bi analyst",
+        "analista bi",
         "vendedor",
         "vendas",
+        "sales",
+        "sdr",
+        "bdr",
+        "account executive",
         "designer",
         "design grafico",
-        "ux",
-        "ui",
         "marketing",
+        "growth",
     )
 
-    def __init__(self, session: Session, settings: Settings | None = None) -> None:
+    def __init__(
+        self,
+        session: Session,
+        settings: Settings | None = None,
+        filters_path: Path | None = None,
+    ) -> None:
         self.session = session
         self.settings = settings or get_settings()
         self.logger = get_logger("jobscouter.services.analyzer")
+        self.filter_rules = JobFilterService(session, filters_path=filters_path).rules
 
         if not self.settings.gemini_api_key:
             raise ValueError("GEMINI_API_KEY nao configurada para analise de IA.")
@@ -67,6 +99,12 @@ class AIAnalyzerService:
         try:
             response_text = await self._generate_json_response(prompt)
         except self.ResourceExhausted:
+            switched = self._switch_to_fallback_model()
+            if switched:
+                self.logger.warning(
+                    "Rate limit no Gemini para vaga id=%s; alternando para modelo fallback.",
+                    job.id,
+                )
             delay = max(self.settings.gemini_retry_delay_seconds, 0.5)
             self.logger.warning("Rate limit no Gemini para vaga id=%s; retry em %.1fs.", job.id, delay)
             await asyncio.sleep(delay)
@@ -107,19 +145,28 @@ class AIAnalyzerService:
         return True
 
     def _build_model_candidates(self) -> tuple[str, ...]:
-        candidates: list[str] = [
-            self.settings.gemini_model,
-            "gemini-1.5-flash",
-            "models/gemini-1.5-flash",
-            "gemini-1.5-flash-latest",
-            "models/gemini-1.5-flash-latest",
-        ]
+        candidates: list[str] = []
+
+        preferred_model = self.settings.gemini_model.strip()
+        if preferred_model and self._is_low_cost_model(preferred_model):
+            candidates.append(preferred_model)
+        elif preferred_model:
+            self.logger.warning(
+                "Modelo preferencial fora da allowlist de baixo custo (%s). Ignorando para reduzir risco de faturamento.",
+                preferred_model,
+            )
+
+        candidates.extend(self.DEFAULT_LOW_COST_MODELS)
 
         try:
             for model in self.genai.list_models():
                 model_name = getattr(model, "name", "")
                 supported_methods = getattr(model, "supported_generation_methods", []) or []
-                if model_name and "flash" in model_name.lower() and "generateContent" in supported_methods:
+                if (
+                    model_name
+                    and self._is_low_cost_model(model_name)
+                    and "generateContent" in supported_methods
+                ):
                     candidates.append(model_name)
         except Exception as exc:
             self.logger.warning("Nao foi possivel listar modelos Gemini disponiveis: %s", exc)
@@ -127,19 +174,48 @@ class AIAnalyzerService:
         unique_candidates = list(dict.fromkeys(candidates))
         return tuple(unique_candidates)
 
+    def _is_low_cost_model(self, model_name: str) -> bool:
+        normalized = model_name.strip().lower()
+        if normalized.startswith("models/"):
+            normalized = normalized[len("models/") :]
+        return normalized in self.LOW_COST_MODEL_FAMILIES
+
     def _build_prompt(self, job: Job) -> str:
         description = (job.description_raw or "").strip()
+        include_keywords = self._format_keywords(self.filter_rules.include_keywords)
+        exclude_keywords = self._format_keywords(self.filter_rules.exclude_keywords)
         return (
-            "Voce e um classificador objetivo de vagas. "
-            "Avalie apenas aderencia tecnica ao perfil alvo. "
-            "Se a vaga nao for de desenvolvimento de software, score deve ser 0. "
-            "Retorne apenas JSON valido com as chaves score e summary. "
-            "Sem markdown. Sem texto fora do JSON.\n\n"
-            f"Perfil alvo: {PROFILE_TEXT}\n"
+            "Voce e um Tech Sourcer. Avalie a vaga abaixo comparando-a com as preferencias do candidato:\n\n"
+            f"TECNOLOGIAS DESEJADAS (CORE STACK): {include_keywords}\n"
+            f"TECNOLOGIAS/TERMOS A EVITAR: {exclude_keywords}\n"
+            f"PERFIL ALVO COMPLEMENTAR: {PROFILE_TEXT}\n\n"
+            f"LOCALIZACAO DO CANDIDATO: {CANDIDATE_LOCATION_TEXT}\n\n"
+            "INSTRUCOES:\n"
+            "REGRAS DE VETO DE LOCALIZACAO (prioridade maxima):\n"
+            "- Identifique a localidade exigida pela vaga.\n"
+            "- Se a vaga for remota e restrita ao Brasil/Brazil, ela e elegivel (nao aplicar veto de localizacao).\n"
+            "- Se a vaga for remota e restrita a LATAM/America Latina, ela e elegivel.\n"
+            "- Se a vaga for Remote Global/Worldwide/Anywhere, ela e elegivel independentemente do pais da empresa.\n"
+            "- Se a vaga exigir residencia ou autorizacao de trabalho em pais especifico diferente do Brasil e NAO mencionar Remote Global, aceita candidatos de qualquer lugar, visto ou relocacao, o score deve ser 0.\n"
+            "- Nesses casos, o summary deve comecar obrigatoriamente com o prefixo [VETO - Localizacao].\n"
+            "REGRAS DE VETO DE FUNCAO:\n"
+            "- Se a vaga for de area correlata mas nao identica (Data Science, Data Engineering puro, BI, Analytics, Marketing, Sales e correlatas), o score deve ser 0.\n"
+            "- O foco exclusivo e Software Development / Engineering.\n"
+            "REGRAS DE PONTUACAO (MATCH):\n"
+            f"- Atribua nota de 1 a 10 usando include_keywords ({include_keywords}) apenas para vagas que passarem pelos vetos acima.\n"
+            "- Se a vaga contiver termos a evitar, reduza a nota, avaliando se o termo e foco principal ou apenas opcional.\n"
+            "- No summary, justifique brevemente a nota antes de descrever a vaga.\n"
+            "- Retorne apenas JSON valido com as chaves score e summary.\n"
+            "- Sem markdown. Sem texto fora do JSON.\n\n"
             f"Titulo da vaga: {job.title}\n"
             f"Descricao da vaga: {description}\n\n"
             "Formato obrigatorio: {\"score\": <inteiro 0-10>, \"summary\": \"<texto curto>\"}"
         )
+
+    def _format_keywords(self, keywords: tuple[str, ...]) -> str:
+        if not keywords:
+            return "Nenhuma informada"
+        return ", ".join(keywords)
 
     def _parse_response(self, response_text: str) -> dict[str, Any]:
         try:

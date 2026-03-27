@@ -32,7 +32,7 @@ class Settings:
             remotar_api_url=os.getenv("REMOTAR_API_URL", "https://api.remotar.com.br"),
             user_agent=os.getenv("USER_AGENT", "jobscouter-ingestion-bot/0.1"),
             gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
-            gemini_model=os.getenv("GEMINI_MODEL", "gemini-1.5-flash-latest"),
+            gemini_model=os.getenv("GEMINI_MODEL", "models/gemini-2.5-flash-lite"),
             gemini_retry_delay_seconds=float(os.getenv("GEMINI_RETRY_DELAY_SECONDS", "1.5")),
         )
 
