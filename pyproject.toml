@@ -15,12 +15,14 @@ authors = [
 dependencies = [
   "alembic>=1.14.0",
   "beautifulsoup4>=4.12.3",
+  "fastapi>=0.115.0",
   "google-generativeai>=0.8.5",
   "httpx>=0.28.1",
   "PyYAML>=6.0.2",
   "psycopg[binary]>=3.2.6",
   "sqlalchemy>=2.0.37",
-  "sqlmodel>=0.0.22"
+  "sqlmodel>=0.0.22",
+  "uvicorn[standard]>=0.34.0"
 ]
 
 [project.optional-dependencies]
