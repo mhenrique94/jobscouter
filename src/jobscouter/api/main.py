@@ -4,6 +4,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from jobscouter.api.routes.control import router as control_router
 from jobscouter.api.routes.jobs import router as jobs_router
 
 
@@ -18,6 +19,7 @@ app.add_middleware(
 )
 
 app.include_router(jobs_router, prefix="/api/v1")
+app.include_router(control_router, prefix="/api/v1/control")
 
 
 if __name__ == "__main__":
