@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 from jobscouter.core.logging import get_logger
 from jobscouter.db.models import Job
 from jobscouter.schemas.job import JobPayload
+from jobscouter.services.filter import JobFilterService
 
 
 @dataclass(slots=True)
@@ -17,17 +18,40 @@ class IngestionStats:
     skipped: int = 0
     failed: int = 0
 
+    def add(self, other: "IngestionStats") -> None:
+        self.inserted += other.inserted
+        self.updated += other.updated
+        self.skipped += other.skipped
+        self.failed += other.failed
+
+    @property
+    def total(self) -> int:
+        return self.inserted + self.updated + self.skipped + self.failed
+
+    def to_pretty_line(self) -> str:
+        return (
+            f"novas={self.inserted:>3} | atualizadas={self.updated:>3} "
+            f"| ignoradas={self.skipped:>3} | falhas={self.failed:>3}"
+        )
+
+    def __str__(self) -> str:
+        return self.to_pretty_line()
+
 
 class JobIngestionService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.logger = get_logger("jobscouter.services.ingestion")
+        self.filter_service = JobFilterService(session)
 
-    def ingest_jobs(self, jobs: list[JobPayload]) -> IngestionStats:
+    async def ingest_jobs(self, jobs: list[JobPayload]) -> IngestionStats:
         stats = IngestionStats()
         for job in jobs:
             try:
                 outcome = self.upsert_job(job)
+                persisted_job = self._find_existing_job(job)
+                if persisted_job is not None:
+                    await self.filter_service.classify_job(persisted_job)
             except Exception as exc:
                 stats.failed += 1
                 self.logger.exception("Falha ao persistir vaga %s: %s", job.url, exc)
@@ -40,7 +64,7 @@ class JobIngestionService:
             else:
                 stats.skipped += 1
 
-        self.logger.info(
+        self.logger.debug(
             "Ingestao concluida | inserted=%s updated=%s skipped=%s failed=%s",
             stats.inserted,
             stats.updated,

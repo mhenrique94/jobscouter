@@ -8,7 +8,41 @@ Modulo de ingestao de vagas construido em Python 3.11+, com scrapers extensivos,
 - `RemoteOKScraper`: consome a API JSON da RemoteOK.
 - `RemotarScraper`: faz crawling HTML da Remotar e enriquece detalhes por vaga.
 - `JobIngestionService`: normaliza o fluxo de persistencia e garante idempotencia.
-- `Job`: schema SQLModel para PostgreSQL, com constraints para deduplicacao.
+- `JobFilterService`: classifica vagas com filtros estaticos antes da analise por IA.
+- `Job`: schema SQLModel para PostgreSQL, com constraints para deduplicacao e status de processamento.
+
+## Filtragem estatica pre-IA
+
+Após cada upsert, a vaga e classificada imediatamente para reduzir custo de processamento de IA.
+
+### Status da vaga
+
+- `pending`: vaga sem match de include/exclude (fila para revisao manual posterior).
+- `ready_for_ai`: vaga aprovada por conter ao menos uma `include_keyword`.
+- `discarded`: vaga descartada por conter ao menos uma `exclude_keyword`.
+- `analyzed`: vaga ja analisada; este status nao e sobrescrito pela filtragem estatica.
+
+### Motivo de descarte
+
+- `filter_reason`: preenchido apenas quando `status=discarded`, com formato `Palavra excluida: <termo>`.
+
+### Arquivo de regras
+
+As regras sao lidas de `filters.yaml` na raiz do projeto:
+
+```yaml
+filters:
+	exclude_keywords: ["Presencial", "Híbrido", "Junior", "Estágio", "PHP", "Java", "C#", "Rust"]
+	include_keywords: ["Remote", "Remoto", "Home Office", "Django", "Vue", "Python", "Fullstack", "Pleno", "Mid-level"]
+```
+
+Prioridade de classificacao:
+
+1. Se encontrar qualquer `exclude_keyword`, define `discarded`.
+2. Caso passe pelo exclude e encontre alguma `include_keyword`, define `ready_for_ai`.
+3. Caso contrario, define `pending`.
+
+O matching e case-insensitive sobre titulo + descricao da vaga.
 
 ## Executando localmente
 

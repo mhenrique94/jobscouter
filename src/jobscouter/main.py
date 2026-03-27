@@ -11,7 +11,7 @@ from jobscouter.core.logging import configure_logging, get_logger
 from jobscouter.db.session import session_scope
 from jobscouter.scrapers.remotar import RemotarScraper
 from jobscouter.scrapers.remoteok import RemoteOKScraper
-from jobscouter.services.ingestion import JobIngestionService
+from jobscouter.services.ingestion import IngestionStats, JobIngestionService
 
 
 def _positive_int(value: str) -> int:
@@ -59,19 +59,31 @@ async def run_ingestion(
         while True:
             cycle += 1
             new_or_updated_in_cycle = 0
-            logger.info("Iniciando ciclo de ingestao %s", cycle)
+            logger.info("=" * 72)
+            logger.info("CICLO %s | fonte=%s | limit=%s", cycle, source, limit if limit is not None else "sem limite")
+            logger.info("=" * 72)
+            cycle_stats = IngestionStats()
+            per_source_stats: dict[str, IngestionStats] = {}
 
             with session_scope() as session:
                 ingestion_service = JobIngestionService(session)
                 for selected_source in selected_sources:
-                    logger.info("Executando scraper %s", selected_source)
+                    logger.info("[%s] Coletando vagas...", selected_source)
                     jobs = await scrapers[selected_source].fetch_jobs(
                         limit=limit,
                         max_pages=max_pages if selected_source == "remotar" else None,
                     )
-                    stats = ingestion_service.ingest_jobs(jobs)
-                    logger.info("Resumo %s: %s", selected_source, stats)
+                    stats = await ingestion_service.ingest_jobs(jobs)
+                    per_source_stats[selected_source] = stats
+                    cycle_stats.add(stats)
+                    logger.info("[%s] %s", selected_source, stats.to_pretty_line())
                     new_or_updated_in_cycle += stats.inserted + stats.updated
+
+            logger.info("Resumo do ciclo %s:", cycle)
+            for selected_source in selected_sources:
+                stats = per_source_stats.get(selected_source, IngestionStats())
+                logger.info("  - %-8s %s", selected_source, stats.to_pretty_line())
+            logger.info("  - %-8s %s", "total", cycle_stats.to_pretty_line())
 
             if not continuous:
                 logger.info("Modo continuo desativado. Encerrando apos o primeiro ciclo.")
