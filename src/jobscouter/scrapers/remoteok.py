@@ -15,6 +15,7 @@ class RemoteOKScraper(BaseScraper):
         limit: int | None = None,
         max_pages: int | None = None,
         keyword: str | None = None,
+        checkpoint_date: datetime | None = None,
     ) -> list[JobPayload]:
         _ = max_pages
         api_url = self.settings.remoteok_api_url
@@ -28,9 +29,18 @@ class RemoteOKScraper(BaseScraper):
             if not isinstance(entry, dict) or "id" not in entry or "position" not in entry:
                 continue
 
-            normalized = self._normalize_job(entry)
+            normalized = self._normalize_job(entry, keyword)
             if normalized is None:
                 continue
+
+            if checkpoint_date is not None and self._normalize_datetime(normalized.created_at) <= self._normalize_datetime(
+                checkpoint_date
+            ):
+                self.logger.info(
+                    "[Checkpoint] Vagas antigas atingidas. Interrompendo busca para %s.",
+                    keyword,
+                )
+                break
 
             jobs.append(normalized)
             if limit is not None and len(jobs) >= limit:
@@ -39,7 +49,7 @@ class RemoteOKScraper(BaseScraper):
         self.logger.info("RemoteOK retornou %s vagas normalizadas", len(jobs))
         return jobs
 
-    def _normalize_job(self, entry: dict) -> JobPayload | None:
+    def _normalize_job(self, entry: dict, keyword: str | None) -> JobPayload | None:
         title = entry.get("position")
         company = entry.get("company")
         url = entry.get("url") or entry.get("apply_url")
@@ -54,6 +64,7 @@ class RemoteOKScraper(BaseScraper):
             company=company,
             url=url,
             source=self.source_name,
+            search_keyword=keyword,
             description_raw=entry.get("description") or "",
             location=entry.get("location") or None,
             salary=self._format_salary(entry),
@@ -81,3 +92,8 @@ class RemoteOKScraper(BaseScraper):
         except ValueError:
             self.logger.warning("Data invalida na RemoteOK: %s", value)
             return datetime.now(timezone.utc)
+
+    def _normalize_datetime(self, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)

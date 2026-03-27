@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -24,6 +25,7 @@ class BaseScraper(ABC):
         limit: int | None = None,
         max_pages: int | None = None,
         keyword: str | None = None,
+        checkpoint_date: datetime | None = None,
     ) -> list[JobPayload]:
         raise NotImplementedError
 

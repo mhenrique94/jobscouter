@@ -18,6 +18,7 @@ class JobPayload(BaseModel):
     url: str
     source: str
     description_raw: str = ""
+    search_keyword: str | None = None
     location: str | None = None
     salary: str | None = None
     created_at: datetime = utcnow()

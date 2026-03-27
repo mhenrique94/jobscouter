@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from enum import Enum
 
-from sqlmodel import Session, select
+from sqlalchemy import func
+from sqlmodel import Session, col, select
 
 from jobscouter.core.logging import get_logger
 from jobscouter.db.models import Job
@@ -38,6 +40,12 @@ class IngestionStats:
         return self.to_pretty_line()
 
 
+class IngestionResult(str, Enum):
+    INSERTED = "inserted"
+    UPDATED = "updated"
+    SKIPPED = "skipped"
+
+
 class JobIngestionService:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -49,17 +57,21 @@ class JobIngestionService:
         for job in jobs:
             try:
                 outcome = self.upsert_job(job)
-                persisted_job = self._find_existing_job(job)
-                if persisted_job is not None:
+                if outcome in (IngestionResult.INSERTED, IngestionResult.UPDATED):
+                    persisted_job = self._find_existing_job(job)
+                else:
+                    persisted_job = None
+
+                if persisted_job is not None and outcome in (IngestionResult.INSERTED, IngestionResult.UPDATED):
                     await self.filter_service.classify_job(persisted_job)
             except Exception as exc:
                 stats.failed += 1
                 self.logger.exception("Falha ao persistir vaga %s: %s", job.url, exc)
                 continue
 
-            if outcome == "inserted":
+            if outcome == IngestionResult.INSERTED:
                 stats.inserted += 1
-            elif outcome == "updated":
+            elif outcome == IngestionResult.UPDATED:
                 stats.updated += 1
             else:
                 stats.skipped += 1
@@ -73,12 +85,23 @@ class JobIngestionService:
         )
         return stats
 
-    def upsert_job(self, payload: JobPayload) -> str:
+    def get_latest_job_date(self, source: str, keyword: str | None) -> datetime | None:
+        normalized_keyword = self._normalize_keyword(keyword)
+        statement = select(func.max(Job.created_at)).where(Job.source == source)
+        if normalized_keyword is None:
+            statement = statement.where(col(Job.search_keyword).is_(None))
+        else:
+            statement = statement.where(Job.search_keyword == normalized_keyword)
+
+        latest = self.session.exec(statement).one()
+        return latest
+
+    def upsert_job(self, payload: JobPayload) -> IngestionResult:
         existing = self._find_existing_job(payload)
         if existing is None:
             self.session.add(self._build_model(payload))
             self.session.flush()
-            return "inserted"
+            return IngestionResult.INSERTED
 
         changed = False
         for field in ["title", "company", "url", "description_raw", "location", "salary", "created_at"]:
@@ -93,21 +116,30 @@ class JobIngestionService:
             existing.last_seen_at = datetime.now(timezone.utc)
             self.session.add(existing)
             self.session.flush()
-            return "updated"
+            return IngestionResult.UPDATED
 
-        return "skipped"
+        return IngestionResult.SKIPPED
 
     def _find_existing_job(self, payload: JobPayload) -> Job | None:
+        normalized_keyword = self._normalize_keyword(payload.search_keyword)
         if payload.external_id:
             statement = select(Job).where(
                 Job.source == payload.source,
                 Job.external_id == payload.external_id,
             )
+            if normalized_keyword is None:
+                statement = statement.where(col(Job.search_keyword).is_(None))
+            else:
+                statement = statement.where(Job.search_keyword == normalized_keyword)
             job = self.session.exec(statement).first()
             if job is not None:
                 return job
 
         statement = select(Job).where(Job.source == payload.source, Job.url == payload.url)
+        if normalized_keyword is None:
+            statement = statement.where(col(Job.search_keyword).is_(None))
+        else:
+            statement = statement.where(Job.search_keyword == normalized_keyword)
         return self.session.exec(statement).first()
 
     def _build_model(self, payload: JobPayload) -> Job:
@@ -118,6 +150,7 @@ class JobIngestionService:
             company=payload.company,
             url=payload.url,
             source=payload.source,
+            search_keyword=self._normalize_keyword(payload.search_keyword),
             description_raw=payload.description_raw,
             location=payload.location,
             salary=payload.salary,
@@ -136,3 +169,12 @@ class JobIngestionService:
         if value.tzinfo is None:
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
+
+    def _normalize_keyword(self, keyword: str | None) -> str | None:
+        if keyword is None:
+            return None
+
+        normalized = keyword.strip()
+        if not normalized:
+            return None
+        return normalized

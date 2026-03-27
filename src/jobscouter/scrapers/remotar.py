@@ -25,6 +25,7 @@ class RemotarListingItem:
     title: str
     company: str | None
     url: str
+    created_at: datetime | None = None
     api_payload: dict | None = None
 
 
@@ -36,6 +37,7 @@ class RemotarScraper(BaseScraper):
         limit: int | None = None,
         max_pages: int | None = None,
         keyword: str | None = None,
+        checkpoint_date: datetime | None = None,
     ) -> list[JobPayload]:
         listing_url = self.settings.remotar_base_url
         if keyword:
@@ -49,16 +51,33 @@ class RemotarScraper(BaseScraper):
             listings = []
 
         if not listings:
-            listings = await self._extract_listing_items_from_api(limit=limit, max_pages=max_pages, keyword=keyword)
+            listings = await self._extract_listing_items_from_api(
+                limit=limit,
+                max_pages=max_pages,
+                keyword=keyword,
+                checkpoint_date=checkpoint_date,
+            )
 
         jobs: list[JobPayload] = []
 
-        for item in listings[:limit]:
+        target_items = listings[:limit] if limit is not None else listings
+        for item in target_items:
             try:
                 if item.api_payload is not None:
-                    jobs.append(self._normalize_api_job(item.api_payload))
+                    job = self._normalize_api_job(item.api_payload, keyword)
                 else:
-                    jobs.append(await self._fetch_job_detail(item))
+                    job = await self._fetch_job_detail(item, keyword)
+
+                if checkpoint_date is not None and self._normalize_datetime(job.created_at) <= self._normalize_datetime(
+                    checkpoint_date
+                ):
+                    self.logger.info(
+                        "[Checkpoint] Vagas antigas atingidas. Interrompendo busca para %s.",
+                        keyword,
+                    )
+                    break
+
+                jobs.append(job)
             except Exception as exc:
                 self.logger.exception("Falha ao processar vaga Remotar %s: %s", item.url, exc)
 
@@ -106,6 +125,7 @@ class RemotarScraper(BaseScraper):
         limit: int | None = None,
         max_pages: int | None = None,
         keyword: str | None = None,
+        checkpoint_date: datetime | None = None,
     ) -> list[RemotarListingItem]:
         api_url = f"{self.settings.remotar_api_url}/jobs"
         items: list[RemotarListingItem] = []
@@ -144,6 +164,16 @@ class RemotarScraper(BaseScraper):
                 if external_id in seen_ids:
                     continue
 
+                created_at = self._parse_datetime(row.get("createdAt"))
+                if checkpoint_date is not None and self._normalize_datetime(created_at) <= self._normalize_datetime(
+                    checkpoint_date
+                ):
+                    self.logger.info(
+                        "[Checkpoint] Vagas antigas atingidas. Interrompendo busca para %s.",
+                        keyword,
+                    )
+                    return items
+
                 company = None
                 if isinstance(row.get("company"), dict):
                     company = row["company"].get("name")
@@ -156,6 +186,7 @@ class RemotarScraper(BaseScraper):
                         title=title,
                         company=company,
                         url=url,
+                        created_at=created_at,
                         api_payload=row,
                     )
                 )
@@ -185,7 +216,7 @@ class RemotarScraper(BaseScraper):
         value = meta.get("last_page")
         return value if isinstance(value, int) and value > 0 else None
 
-    async def _fetch_job_detail(self, item: RemotarListingItem) -> JobPayload:
+    async def _fetch_job_detail(self, item: RemotarListingItem, keyword: str | None) -> JobPayload:
         html = await self._get_text(item.url)
         soup = BeautifulSoup(html, "html.parser")
 
@@ -205,6 +236,7 @@ class RemotarScraper(BaseScraper):
             company=company,
             url=item.url,
             source=self.source_name,
+            search_keyword=keyword,
             description_raw=description_raw,
             location=location,
             salary=salary,
@@ -266,7 +298,7 @@ class RemotarScraper(BaseScraper):
                     return text
         return None
 
-    def _normalize_api_job(self, row: dict) -> JobPayload:
+    def _normalize_api_job(self, row: dict, keyword: str | None) -> JobPayload:
         job_id = row.get("id")
         title = row.get("title")
         company = self._company_from_api_row(row)
@@ -281,6 +313,7 @@ class RemotarScraper(BaseScraper):
             company=company,
             url=url,
             source=self.source_name,
+            search_keyword=keyword,
             description_raw=row.get("description") or "",
             location=self._location_from_api_row(row),
             salary=self._salary_from_api_row(row),
@@ -346,6 +379,11 @@ class RemotarScraper(BaseScraper):
         except ValueError:
             self.logger.warning("Data invalida na API da Remotar: %s", value)
             return datetime.now(timezone.utc)
+
+    def _normalize_datetime(self, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
 
     def _read_nested(self, data: dict, path: list[str]) -> str | None:
         current: object = data

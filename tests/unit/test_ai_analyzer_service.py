@@ -112,6 +112,47 @@ async def test_non_dev_job_returns_zero_without_model_call(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_non_dev_keyword_does_not_match_inside_other_words(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    fake_model = _FakeModel(texts=['{"score": 8, "summary": "Boa aderencia"}'])
+    _configure_fake_google_modules(monkeypatch, fake_model)
+
+    with Session(engine) as session:
+        service = AIAnalyzerService(session, settings=_settings())
+        result = await service.analyze_job(
+            _build_job(
+                "Backend Developer",
+                "Company acquired recently. Strong Linux knowledge and cloud experience.",
+            )
+        )
+
+    assert result.score == 8
+    assert result.summary == "Boa aderencia"
+    assert fake_model.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_non_dev_keyword_still_matches_full_word(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    fake_model = _FakeModel()
+    _configure_fake_google_modules(monkeypatch, fake_model)
+
+    with Session(engine) as session:
+        service = AIAnalyzerService(session, settings=_settings())
+        result = await service.analyze_job(
+            _build_job("Product Designer", "Colaboracao com time de UX e UI")
+        )
+
+    assert result.score == 0
+    assert "fora de desenvolvimento" in result.summary
+    assert fake_model.calls == 0
+
+
+@pytest.mark.asyncio
 async def test_analyze_job_parses_json_and_clamps_score(monkeypatch) -> None:
     engine = create_engine("sqlite://")
     SQLModel.metadata.create_all(engine)

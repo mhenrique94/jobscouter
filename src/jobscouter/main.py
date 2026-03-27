@@ -118,6 +118,16 @@ async def run_ingestion(
                 for selected_source in selected_sources:
                     source_stats = IngestionStats()
                     for term_index, term in enumerate(search_terms):
+                        normalized_keyword = term.strip() or None
+                        checkpoint_date = ingestion_service.get_latest_job_date(selected_source, normalized_keyword)
+                        if checkpoint_date is not None:
+                            logger.info(
+                                "[%s][%s] Checkpoint encontrado: %s. Vagas antigas serao ignoradas.",
+                                selected_source,
+                                term,
+                                checkpoint_date.isoformat(),
+                            )
+
                         logger.info(
                             "[Ingestion] Buscando vagas para o termo: '%s' na fonte '%s'...",
                             term,
@@ -127,6 +137,7 @@ async def run_ingestion(
                             limit=limit,
                             max_pages=max_pages if selected_source == "remotar" else None,
                             keyword=term,
+                            checkpoint_date=checkpoint_date,
                         )
                         stats = await ingestion_service.ingest_jobs(jobs)
                         source_stats.add(stats)

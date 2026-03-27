@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,6 +24,19 @@ class AIAnalysisResult:
 
 
 class AIAnalyzerService:
+    NON_DEV_KEYWORDS: tuple[str, ...] = (
+        "contador",
+        "contabil",
+        "contabilidade",
+        "vendedor",
+        "vendas",
+        "designer",
+        "design grafico",
+        "ux",
+        "ui",
+        "marketing",
+    )
+
     def __init__(self, session: Session, settings: Settings | None = None) -> None:
         self.session = session
         self.settings = settings or get_settings()
@@ -164,17 +178,9 @@ class AIAnalyzerService:
 
     def _is_non_dev_job(self, title: str, description: str) -> bool:
         text = f"{title}\n{description}".casefold()
+        return any(self._contains_keyword(text, keyword) for keyword in self.NON_DEV_KEYWORDS)
 
-        non_dev_keywords = (
-            "contador",
-            "contabil",
-            "contabilidade",
-            "vendedor",
-            "vendas",
-            "designer",
-            "design grafico",
-            "ux",
-            "ui",
-            "marketing",
-        )
-        return any(keyword in text for keyword in non_dev_keywords)
+    def _contains_keyword(self, text: str, keyword: str) -> bool:
+        # Use word boundaries to avoid substring false positives (e.g. "acquired" -> "ui").
+        pattern = rf"\b{re.escape(keyword.casefold())}\b"
+        return re.search(pattern, text) is not None
