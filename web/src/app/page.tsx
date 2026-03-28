@@ -1,9 +1,13 @@
 "use client";
 
+import axios from "axios";
+import Link from "next/link";
+import { Loader2, RefreshCcw, Settings2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -19,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getJobs, type Job } from "@/lib/api";
+import { getJobs, syncAnalyze, syncIngest, type Job } from "@/lib/api";
 
 type ViewMode = "table" | "cards";
 
@@ -51,27 +55,67 @@ const statusVariant = (status: Job["status"]) => {
   return "secondary";
 };
 
+const getRequestErrorMessage = (error: unknown, fallback: string) => {
+  if (axios.isAxiosError(error)) {
+    const detail = error.response?.data?.detail;
+    if (typeof detail === "string" && detail.length > 0) {
+      return detail;
+    }
+  }
+
+  return fallback;
+};
+
 export default function Home() {
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [ingesting, setIngesting] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+
+  const loadJobs = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await getJobs();
+      setJobs(data);
+    } catch (requestError) {
+      setError(getRequestErrorMessage(requestError, "Nao foi possivel carregar as vagas do backend."));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const loadJobs = async () => {
-      try {
-        setLoading(true);
-        const data = await getJobs();
-        setJobs(data);
-      } catch {
-        setError("Nao foi possivel carregar as vagas do backend.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
     void loadJobs();
   }, []);
+
+  const onSyncIngest = async () => {
+    try {
+      setIngesting(true);
+      const response = await syncIngest();
+      toast.success(response.detail || "Ingestao aceita em background.");
+      await loadJobs();
+    } catch (requestError) {
+      toast.error(getRequestErrorMessage(requestError, "Falha ao iniciar sincronizacao de vagas."));
+    } finally {
+      setIngesting(false);
+    }
+  };
+
+  const onSyncAnalyze = async () => {
+    try {
+      setAnalyzing(true);
+      const response = await syncAnalyze();
+      toast.success(response.detail || "Analise IA aceita em background.");
+      await loadJobs();
+    } catch (requestError) {
+      toast.error(getRequestErrorMessage(requestError, "Falha ao iniciar analise IA."));
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   const jobsCount = useMemo(() => jobs.length, [jobs]);
 
@@ -81,10 +125,33 @@ export default function Home() {
       <section className="relative mx-auto flex w-full max-w-6xl flex-col gap-6">
         <Card className="border border-border/60 bg-card/80 backdrop-blur">
           <CardHeader className="gap-3">
-            <CardTitle className="text-xl md:text-2xl">JobScouter Dashboard</CardTitle>
-            <CardDescription>
-              Vagas coletadas no backend FastAPI. Total listado: {jobsCount}
-            </CardDescription>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-xl md:text-2xl">JobScouter Dashboard</CardTitle>
+                <CardDescription>
+                  Vagas coletadas no backend FastAPI. Total listado: {jobsCount}
+                </CardDescription>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Link href="/settings" className={buttonVariants({ variant: "outline" })}>
+                  <Settings2 />
+                  Configuracoes
+                </Link>
+                <Button type="button" variant="outline" onClick={() => void loadJobs()} disabled={loading}>
+                  <RefreshCcw className={loading ? "animate-spin" : ""} />
+                  Atualizar Lista
+                </Button>
+                <Button type="button" variant="secondary" onClick={onSyncIngest} disabled={ingesting}>
+                  {ingesting ? <Loader2 className="animate-spin" /> : null}
+                  Sincronizar Vagas
+                </Button>
+                <Button type="button" onClick={onSyncAnalyze} disabled={analyzing}>
+                  {analyzing ? <Loader2 className="animate-spin" /> : null}
+                  Rodar Analise IA
+                </Button>
+              </div>
+            </div>
+
             <div className="flex flex-wrap gap-2">
               <Button
                 variant={viewMode === "table" ? "default" : "outline"}

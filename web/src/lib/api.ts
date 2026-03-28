@@ -1,6 +1,7 @@
 import axios from "axios";
 
 export type JobStatus = "pending" | "ready_for_ai" | "discarded" | "analyzed";
+export type SyncSource = "all" | "remoteok" | "remotar";
 
 export interface Job {
   id: number;
@@ -10,10 +11,27 @@ export interface Job {
   ai_score: number | null;
 }
 
+export interface FilterConfig {
+  search_terms: string[];
+  include_keywords: string[];
+  exclude_keywords: string[];
+}
+
+export interface FilterConfigPatchPayload {
+  search_terms?: string[];
+  include_keywords?: string[];
+  exclude_keywords?: string[];
+}
+
+export interface BackgroundTaskAccepted {
+  detail: string;
+}
+
 const API_TIMEOUT_MS = 10_000;
+const API_BASE_PATH = process.env.NEXT_PUBLIC_API_BASE_PATH?.trim() || "/api/v1";
 
 export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_BASE_PATH ?? "",
+  baseURL: API_BASE_PATH,
   timeout: API_TIMEOUT_MS,
 });
 
@@ -22,5 +40,29 @@ export async function getJobs(limit = 50): Promise<Job[]> {
     params: { limit },
   });
 
+  return response.data;
+}
+
+export async function getConfig(): Promise<FilterConfig> {
+  const response = await api.get<FilterConfig>("/config");
+  return response.data;
+}
+
+export async function patchConfig(payload: FilterConfigPatchPayload): Promise<FilterConfig> {
+  const response = await api.patch<FilterConfig>("/config", payload);
+  return response.data;
+}
+
+export async function syncIngest(source: SyncSource = "all", limit = 20): Promise<BackgroundTaskAccepted> {
+  const response = await api.post<BackgroundTaskAccepted>("/control/sync/ingest", null, {
+    params: { source, limit },
+  });
+  return response.data;
+}
+
+export async function syncAnalyze(limit?: number): Promise<BackgroundTaskAccepted> {
+  const response = await api.post<BackgroundTaskAccepted>("/control/sync/analyze", null, {
+    params: limit === undefined ? undefined : { limit },
+  });
   return response.data;
 }
