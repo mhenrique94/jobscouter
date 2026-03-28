@@ -6,6 +6,7 @@ import { Loader2, RefreshCcw, Settings2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { JobDetailDrawer } from "@/components/JobDetailDrawer";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -69,10 +70,17 @@ const getRequestErrorMessage = (error: unknown, fallback: string) => {
 export default function Home() {
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [ingesting, setIngesting] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+
+  const openJobDetails = (job: Job) => {
+    setSelectedJob(job);
+    setDrawerOpen(true);
+  };
 
   const loadJobs = async () => {
     try {
@@ -207,7 +215,18 @@ export default function Home() {
                 </TableHeader>
                 <TableBody>
                   {jobs.map((job) => (
-                    <TableRow key={job.id}>
+                    <TableRow
+                      key={job.id}
+                      className="cursor-pointer hover:bg-muted"
+                      onClick={() => openJobDetails(job)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openJobDetails(job);
+                        }
+                      }}
+                      tabIndex={0}
+                    >
                       <TableCell className="font-medium">{job.title}</TableCell>
                       <TableCell>{job.company}</TableCell>
                       <TableCell>
@@ -229,7 +248,18 @@ export default function Home() {
         {!loading && !error && jobs.length > 0 && viewMode === "cards" ? (
           <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {jobs.map((job) => (
-              <Card key={job.id} className="border border-border/60">
+              <Card
+                key={job.id}
+                className="cursor-pointer border border-border/60 transition-all hover:scale-[1.01] hover:shadow-lg"
+                onClick={() => openJobDetails(job)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openJobDetails(job);
+                  }
+                }}
+                tabIndex={0}
+              >
                 <CardHeader className="gap-2">
                   <CardTitle className="line-clamp-2 text-base">{job.title}</CardTitle>
                   <CardDescription>{job.company}</CardDescription>
@@ -244,6 +274,8 @@ export default function Home() {
             ))}
           </section>
         ) : null}
+
+        <JobDetailDrawer open={drawerOpen} onOpenChange={setDrawerOpen} job={selectedJob} />
       </section>
     </main>
   );

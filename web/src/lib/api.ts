@@ -7,8 +7,11 @@ export interface Job {
   id: number;
   title: string;
   company: string;
+  url: string;
+  description_raw: string;
   status: JobStatus;
   ai_score: number | null;
+  ai_summary: string | null;
 }
 
 export interface FilterConfig {
