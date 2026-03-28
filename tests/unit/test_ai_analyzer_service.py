@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -69,7 +69,7 @@ def _settings() -> Settings:
 
 
 def _build_job(title: str, description_raw: str) -> Job:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return Job(
         external_id="ext-1",
         title=title,
@@ -95,7 +95,9 @@ def _configure_fake_google_modules(monkeypatch, fake_model: _FakeModel) -> None:
         GenerationConfig=lambda **kwargs: kwargs,
         list_models=lambda: [],
     )
-    fake_api_exceptions = SimpleNamespace(ResourceExhausted=_FakeResourceExhausted, NotFound=_FakeNotFound)
+    fake_api_exceptions = SimpleNamespace(
+        ResourceExhausted=_FakeResourceExhausted, NotFound=_FakeNotFound
+    )
 
     def _fake_import_module(name: str):
         if name == "google.generativeai":
@@ -283,7 +285,9 @@ async def test_analyze_job_parses_json_and_clamps_score(monkeypatch) -> None:
 
     with Session(engine) as session:
         service = AIAnalyzerService(session, settings=_settings())
-        result = await service.analyze_job(_build_job("Full-stack Developer", "Python Django e Vue.js"))
+        result = await service.analyze_job(
+            _build_job("Full-stack Developer", "Python Django e Vue.js")
+        )
 
     assert result.score == 10
     assert result.summary == "Muito aderente"
@@ -337,7 +341,9 @@ async def test_switches_model_when_resource_exhausted(monkeypatch) -> None:
         GenerationConfig=lambda **kwargs: kwargs,
         list_models=lambda: [],
     )
-    fake_api_exceptions = SimpleNamespace(ResourceExhausted=_FakeResourceExhausted, NotFound=_FakeNotFound)
+    fake_api_exceptions = SimpleNamespace(
+        ResourceExhausted=_FakeResourceExhausted, NotFound=_FakeNotFound
+    )
 
     def _fake_import_module(name: str):
         if name == "google.generativeai":

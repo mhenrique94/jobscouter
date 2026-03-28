@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -129,7 +129,7 @@ async def test_remoteok_stops_at_checkpoint_date() -> None:
         scraper = RemoteOKScraper(client=client, settings=settings)
         jobs = await scraper.fetch_jobs(
             keyword="python",
-            checkpoint_date=datetime(2026, 3, 26, 0, 0, 0, tzinfo=timezone.utc),
+            checkpoint_date=datetime(2026, 3, 26, 0, 0, 0, tzinfo=UTC),
         )
 
     assert len(jobs) == 1

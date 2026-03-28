@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -25,7 +25,7 @@ def test_ingestion_is_idempotent() -> None:
         description_raw="desc",
         location="Remote",
         salary="USD 100,000 - USD 120,000",
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
 
     with Session(engine) as session:
@@ -57,9 +57,9 @@ def test_get_latest_job_date_filters_by_keyword() -> None:
     engine = create_engine("sqlite://")
     SQLModel.metadata.create_all(engine)
 
-    older_python = datetime(2026, 3, 25, 10, 0, 0, tzinfo=timezone.utc)
-    newer_python = datetime(2026, 3, 26, 10, 0, 0, tzinfo=timezone.utc)
-    newer_django = datetime(2026, 3, 27, 10, 0, 0, tzinfo=timezone.utc)
+    older_python = datetime(2026, 3, 25, 10, 0, 0, tzinfo=UTC)
+    newer_python = datetime(2026, 3, 26, 10, 0, 0, tzinfo=UTC)
+    newer_django = datetime(2026, 3, 27, 10, 0, 0, tzinfo=UTC)
 
     with Session(engine) as session:
         service = JobIngestionService(session)
@@ -103,7 +103,7 @@ def test_get_latest_job_date_filters_by_keyword() -> None:
         latest_python = service.get_latest_job_date("remoteok", "python")
 
     assert latest_python is not None
-    assert latest_python.replace(tzinfo=timezone.utc) == newer_python
+    assert latest_python.replace(tzinfo=UTC) == newer_python
 
 
 def test_ingest_jobs_skips_classification_when_outcome_skipped() -> None:
@@ -117,7 +117,7 @@ def test_ingest_jobs_skips_classification_when_outcome_skipped() -> None:
         url="https://example.com/jobs/abc-123",
         source="remoteok",
         search_keyword="python",
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
 
     with Session(engine) as session:

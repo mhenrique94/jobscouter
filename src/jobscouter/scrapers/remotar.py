@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import re
-from urllib.parse import urlencode
-from urllib.parse import urljoin
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from urllib.parse import urlencode, urljoin
 
 from bs4 import BeautifulSoup, Tag
 
 from jobscouter.schemas.job import JobPayload
 from jobscouter.scrapers.base import BaseScraper
-
 
 JOB_PATH_PREFIX = "/job/"
 SALARY_PATTERN = re.compile(
@@ -53,7 +51,9 @@ class RemotarScraper(BaseScraper):
                 html = await self._get_text(listing_url)
                 listings = self._extract_listing_items(html)
             except Exception as exc:
-                self.logger.warning("Falha ao buscar listagem em %s; usando fallback para API: %s", listing_url, exc)
+                self.logger.warning(
+                    "Falha ao buscar listagem em %s; usando fallback para API: %s", listing_url, exc
+                )
 
             if not listings:
                 listings = await self._extract_listing_items_from_api(
@@ -73,9 +73,9 @@ class RemotarScraper(BaseScraper):
                 else:
                     job = await self._fetch_job_detail(item, keyword)
 
-                if checkpoint_date is not None and self._normalize_datetime(job.created_at) <= self._normalize_datetime(
-                    checkpoint_date
-                ):
+                if checkpoint_date is not None and self._normalize_datetime(
+                    job.created_at
+                ) <= self._normalize_datetime(checkpoint_date):
                     self.logger.info(
                         "[Checkpoint] Vagas antigas atingidas. Interrompendo busca para %s.",
                         keyword,
@@ -121,7 +121,9 @@ class RemotarScraper(BaseScraper):
             seen_urls.add(absolute_url)
 
         if not items:
-            self.logger.warning("Nenhuma vaga foi encontrada na pagina da Remotar; possivel mudanca no HTML")
+            self.logger.warning(
+                "Nenhuma vaga foi encontrada na pagina da Remotar; possivel mudanca no HTML"
+            )
 
         return items
 
@@ -170,9 +172,9 @@ class RemotarScraper(BaseScraper):
                     continue
 
                 created_at = self._parse_datetime(row.get("createdAt"))
-                if checkpoint_date is not None and self._normalize_datetime(created_at) <= self._normalize_datetime(
-                    checkpoint_date
-                ):
+                if checkpoint_date is not None and self._normalize_datetime(
+                    created_at
+                ) <= self._normalize_datetime(checkpoint_date):
                     self.logger.info(
                         "[Checkpoint] Vagas antigas atingidas. Interrompendo busca para %s.",
                         keyword,
@@ -245,7 +247,7 @@ class RemotarScraper(BaseScraper):
             description_raw=description_raw,
             location=location,
             salary=salary,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
 
     def _extract_job_id(self, url: str) -> str:
@@ -374,21 +376,21 @@ class RemotarScraper(BaseScraper):
 
     def _parse_datetime(self, value: str | None) -> datetime:
         if not value:
-            return datetime.now(timezone.utc)
+            return datetime.now(UTC)
 
         try:
             parsed = datetime.fromisoformat(value)
             if parsed.tzinfo is None:
-                return parsed.replace(tzinfo=timezone.utc)
-            return parsed.astimezone(timezone.utc)
+                return parsed.replace(tzinfo=UTC)
+            return parsed.astimezone(UTC)
         except ValueError:
             self.logger.warning("Data invalida na API da Remotar: %s", value)
-            return datetime.now(timezone.utc)
+            return datetime.now(UTC)
 
     def _normalize_datetime(self, value: datetime) -> datetime:
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
     def _read_nested(self, data: dict, path: list[str]) -> str | None:
         current: object = data

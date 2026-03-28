@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 
 from sqlalchemy import func
@@ -20,7 +20,7 @@ class IngestionStats:
     skipped: int = 0
     failed: int = 0
 
-    def add(self, other: "IngestionStats") -> None:
+    def add(self, other: IngestionStats) -> None:
         self.inserted += other.inserted
         self.updated += other.updated
         self.skipped += other.skipped
@@ -62,7 +62,10 @@ class JobIngestionService:
                 else:
                     persisted_job = None
 
-                if persisted_job is not None and outcome in (IngestionResult.INSERTED, IngestionResult.UPDATED):
+                if persisted_job is not None and outcome in (
+                    IngestionResult.INSERTED,
+                    IngestionResult.UPDATED,
+                ):
                     await self.filter_service.classify_job(persisted_job)
             except Exception as exc:
                 stats.failed += 1
@@ -104,7 +107,15 @@ class JobIngestionService:
             return IngestionResult.INSERTED
 
         changed = False
-        for field in ["title", "company", "url", "description_raw", "location", "salary", "created_at"]:
+        for field in [
+            "title",
+            "company",
+            "url",
+            "description_raw",
+            "location",
+            "salary",
+            "created_at",
+        ]:
             incoming_value = getattr(payload, field)
             current_value = getattr(existing, field)
             if not self._values_equal(current_value, incoming_value):
@@ -112,8 +123,8 @@ class JobIngestionService:
                 changed = True
 
         if changed:
-            existing.updated_at = datetime.now(timezone.utc)
-            existing.last_seen_at = datetime.now(timezone.utc)
+            existing.updated_at = datetime.now(UTC)
+            existing.last_seen_at = datetime.now(UTC)
             self.session.add(existing)
             self.session.flush()
             return IngestionResult.UPDATED
@@ -143,7 +154,7 @@ class JobIngestionService:
         return self.session.exec(statement).first()
 
     def _build_model(self, payload: JobPayload) -> Job:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return Job(
             external_id=payload.external_id,
             title=payload.title,
@@ -162,13 +173,15 @@ class JobIngestionService:
 
     def _values_equal(self, current_value: object, incoming_value: object) -> bool:
         if isinstance(current_value, datetime) and isinstance(incoming_value, datetime):
-            return self._normalize_datetime(current_value) == self._normalize_datetime(incoming_value)
+            return self._normalize_datetime(current_value) == self._normalize_datetime(
+                incoming_value
+            )
         return current_value == incoming_value
 
     def _normalize_datetime(self, value: datetime) -> datetime:
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
     def _normalize_keyword(self, keyword: str | None) -> str | None:
         if keyword is None:

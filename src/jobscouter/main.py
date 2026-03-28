@@ -81,7 +81,12 @@ async def run_ingestion(
             cycle += 1
             new_or_updated_in_cycle = 0
             logger.info("=" * 72)
-            logger.info("CICLO %s | fonte=%s | limit=%s", cycle, source, limit if limit is not None else "sem limite")
+            logger.info(
+                "CICLO %s | fonte=%s | limit=%s",
+                cycle,
+                source,
+                limit if limit is not None else "sem limite",
+            )
             logger.info("=" * 72)
             cycle_stats = IngestionStats()
             per_source_stats: dict[str, IngestionStats] = {}
@@ -92,7 +97,9 @@ async def run_ingestion(
                     source_stats = IngestionStats()
                     for term_index, term in enumerate(search_terms):
                         normalized_keyword = term.strip() or None
-                        checkpoint_date = ingestion_service.get_latest_job_date(selected_source, normalized_keyword)
+                        checkpoint_date = ingestion_service.get_latest_job_date(
+                            selected_source, normalized_keyword
+                        )
                         if checkpoint_date is not None:
                             logger.info(
                                 "[%s][%s] Checkpoint encontrado: %s. Vagas antigas serao ignoradas.",
@@ -170,7 +177,9 @@ def build_parser() -> argparse.ArgumentParser:
         default="all",
         help="Fonte especifica a ser executada.",
     )
-    parser.add_argument("--limit", type=_positive_int, default=None, help="Limita a quantidade de vagas por fonte.")
+    parser.add_argument(
+        "--limit", type=_positive_int, default=None, help="Limita a quantidade de vagas por fonte."
+    )
     parser.add_argument(
         "--keyword",
         type=str,
@@ -221,8 +230,14 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
     if not args.continuous:
-        if args.max_cycles is not None or args.max_duration_seconds is not None or args.max_empty_cycles is not None:
-            parser.error("--max-cycles, --max-duration-seconds e --max-empty-cycles exigem --continuous.")
+        if (
+            args.max_cycles is not None
+            or args.max_duration_seconds is not None
+            or args.max_empty_cycles is not None
+        ):
+            parser.error(
+                "--max-cycles, --max-duration-seconds e --max-empty-cycles exigem --continuous."
+            )
 
     asyncio.run(
         run_ingestion(

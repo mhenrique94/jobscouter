@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib import import_module
 from pathlib import Path
+
 from sqlmodel import Session, select
 
 from jobscouter.core.logging import get_logger
@@ -109,7 +110,9 @@ class FilterConfigService:
             with self.filters_path.open("r", encoding="utf-8") as stream:
                 payload = yaml_module.safe_load(stream) or {}
         except FileNotFoundError:
-            self.logger.warning("Arquivo de filtros nao encontrado em %s. Usando listas vazias.", self.filters_path)
+            self.logger.warning(
+                "Arquivo de filtros nao encontrado em %s. Usando listas vazias.", self.filters_path
+            )
             return FilterConfigData()
         except Exception as exc:
             self.logger.warning(
@@ -162,7 +165,7 @@ class JobFilterService:
         if job.status != status or job.filter_reason != reason:
             job.status = status
             job.filter_reason = reason
-            job.updated_at = datetime.now(timezone.utc)
+            job.updated_at = datetime.now(UTC)
             self.session.add(job)
             self.session.flush()
 

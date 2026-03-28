@@ -30,6 +30,18 @@ down:
 lint-front:
 	@$(MAKE) -C web lint-front
 
+lint:
+	@if [ -f .venv/bin/ruff ]; then \
+		.venv/bin/ruff check --fix src tests; \
+		.venv/bin/ruff format src tests; \
+	elif [ -f venv/bin/ruff ]; then \
+		venv/bin/ruff check --fix src tests; \
+		venv/bin/ruff format src tests; \
+	else \
+		echo "Ruff nao encontrado no ambiente virtual. Execute 'make bootstrap' primeiro."; \
+		exit 1; \
+	fi
+
 test:
 	@if [ -f .venv/bin/pytest ]; then \
 		.venv/bin/pytest $(ARGS); \

@@ -9,7 +9,6 @@ from jobscouter.api.deps import get_session
 from jobscouter.schemas.config import FilterConfigPatchRequest, FilterConfigResponse
 from jobscouter.services.filter import FilterConfigService
 
-
 router = APIRouter(tags=["config"])
 
 

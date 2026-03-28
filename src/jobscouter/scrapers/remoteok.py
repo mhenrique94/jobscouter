@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import urlencode
 
 from jobscouter.schemas.job import JobPayload
@@ -33,9 +33,9 @@ class RemoteOKScraper(BaseScraper):
             if normalized is None:
                 continue
 
-            if checkpoint_date is not None and self._normalize_datetime(normalized.created_at) <= self._normalize_datetime(
-                checkpoint_date
-            ):
+            if checkpoint_date is not None and self._normalize_datetime(
+                normalized.created_at
+            ) <= self._normalize_datetime(checkpoint_date):
                 self.logger.info(
                     "[Checkpoint] Vagas antigas atingidas. Interrompendo busca para %s.",
                     keyword,
@@ -55,7 +55,9 @@ class RemoteOKScraper(BaseScraper):
         url = entry.get("url") or entry.get("apply_url")
 
         if not title or not company or not url:
-            self.logger.warning("Registro RemoteOK ignorado por campos obrigatorios ausentes: %s", entry.get("id"))
+            self.logger.warning(
+                "Registro RemoteOK ignorado por campos obrigatorios ausentes: %s", entry.get("id")
+            )
             return None
 
         return JobPayload(
@@ -85,15 +87,15 @@ class RemoteOKScraper(BaseScraper):
 
     def _parse_date(self, value: str | None) -> datetime:
         if not value:
-            return datetime.now(timezone.utc)
+            return datetime.now(UTC)
 
         try:
             return datetime.fromisoformat(value)
         except ValueError:
             self.logger.warning("Data invalida na RemoteOK: %s", value)
-            return datetime.now(timezone.utc)
+            return datetime.now(UTC)
 
     def _normalize_datetime(self, value: datetime) -> datetime:
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)

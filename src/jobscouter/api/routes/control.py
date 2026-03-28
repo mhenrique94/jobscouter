@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 import httpx
@@ -17,14 +17,15 @@ from jobscouter.scrapers.remoteok import RemoteOKScraper
 from jobscouter.services.analyzer import AIAnalyzerService
 from jobscouter.services.ingestion import IngestionStats, JobIngestionService
 
-
 router = APIRouter(tags=["control"])
 
 
 async def _run_ingest_sync(source: str, limit: int) -> None:
     settings = get_settings()
     logger = get_logger("jobscouter.api.control")
-    logger.info("[control.ingest] Iniciando ingestao em background | source=%s limit=%s", source, limit)
+    logger.info(
+        "[control.ingest] Iniciando ingestao em background | source=%s limit=%s", source, limit
+    )
     try:
         async with httpx.AsyncClient(
             headers={"User-Agent": settings.user_agent},
@@ -53,10 +54,16 @@ async def _run_ingest_sync(source: str, limit: int) -> None:
                         stats = await service.ingest_jobs(jobs)
                         session.commit()
                         total_stats.add(stats)
-                        logger.info("[control.ingest] Fonte=%s | %s", selected_source, stats.to_pretty_line())
+                        logger.info(
+                            "[control.ingest] Fonte=%s | %s",
+                            selected_source,
+                            stats.to_pretty_line(),
+                        )
                     except Exception as exc:
                         session.rollback()
-                        logger.exception("[control.ingest] Falha na fonte %s: %s", selected_source, exc)
+                        logger.exception(
+                            "[control.ingest] Falha na fonte %s: %s", selected_source, exc
+                        )
 
             logger.info("[control.ingest] Concluido | %s", total_stats.to_pretty_line())
     except Exception as exc:
@@ -82,7 +89,7 @@ async def _run_analyze_sync(limit: int | None) -> None:
             for job in jobs:
                 try:
                     result = await service.analyze_job(job)
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(UTC)
 
                     job.ai_score = result.score
                     job.ai_summary = result.summary
@@ -96,7 +103,12 @@ async def _run_analyze_sync(limit: int | None) -> None:
                 except Exception as exc:
                     session.rollback()
                     failed += 1
-                    logger.exception("[control.analyze] Falha ao analisar vaga id=%s url=%s: %s", job.id, job.url, exc)
+                    logger.exception(
+                        "[control.analyze] Falha ao analisar vaga id=%s url=%s: %s",
+                        job.id,
+                        job.url,
+                        exc,
+                    )
 
             logger.info("[control.analyze] Concluido | analyzed=%s failed=%s", analyzed, failed)
     except Exception as exc:
@@ -140,7 +152,9 @@ def sync_ingest(
 def sync_analyze(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_session),
-    limit: int | None = Query(default=None, ge=1, description="Quantidade maxima de vagas a analisar nesta execucao."),
+    limit: int | None = Query(
+        default=None, ge=1, description="Quantidade maxima de vagas a analisar nesta execucao."
+    ),
 ) -> dict[str, str]:
     _ = db
     background_tasks.add_task(_run_analyze_sync, limit)
@@ -177,9 +191,11 @@ async def analyze_job(
         result = await service.analyze_job(job)
     except Exception as exc:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Falha na analise de IA: {exc}") from exc
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Falha na analise de IA: {exc}"
+        ) from exc
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     job.ai_score = result.score
     job.ai_summary = result.summary
     job.ai_analysis_at = now

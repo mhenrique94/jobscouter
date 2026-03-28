@@ -116,6 +116,27 @@ ou:
 make down
 ```
 
+### Testes e qualidade do backend
+
+Depois de preparar o ambiente com `make bootstrap` ou `make dev`, voce pode usar os atalhos abaixo na raiz do projeto:
+
+- `make lint`
+	- executa `ruff check --fix src tests` e depois `ruff format src tests`.
+	- usado para ajustar e formatar automaticamente o codigo Python do backend e dos testes.
+
+- `make test`
+	- executa `pytest` no ambiente virtual configurado pelo bootstrap.
+	- aceita argumentos opcionais via `ARGS`, o que permite filtrar arquivos ou testes especificos.
+
+Exemplos:
+
+```bash
+make lint
+make test
+make test ARGS="tests/unit -q"
+make test ARGS="-k analyzer"
+```
+
 ## Frontend (Next.js)
 
 O frontend fica na pasta `web` e usa Next.js 15 + TypeScript + Tailwind + Shadcn/UI.
@@ -173,6 +194,25 @@ Variaveis uteis no frontend (definidas no `.env` da raiz):
 
 - `NEXT_PUBLIC_API_BASE_URL` (padrao: `http://localhost:8000`)
 - `NEXT_PUBLIC_API_BASE_PATH` (padrao: vazio)
+
+### Qualidade de codigo do frontend
+
+Com o frontend preparado, voce pode validar o codigo a partir da raiz do projeto com:
+
+- `make lint-front`
+	- executa o lint do frontend a partir da raiz, delegando para o projeto em `web/`.
+	- equivale ao fluxo de validacao de codigo do Next.js configurado no frontend.
+
+- `make test-front`
+	- executa os testes do frontend a partir da raiz, delegando para o projeto em `web/`.
+	- equivale a rodar `npm run test` dentro da pasta `web`.
+
+Exemplos:
+
+```bash
+make lint-front
+make test-front
+```
 
 ## API HTTP (FastAPI)
 
@@ -247,7 +287,7 @@ Ao concluir a vaga, o status e atualizado para `analyzed`.
 - Retorno exigido em JSON estrito com `score` e `summary`.
 - Vagas claramente nao-dev (ex.: contador, vendedor, design) recebem `score=0` imediatamente.
 - Em rate limit (`ResourceExhausted`), o servico aplica delay curto e retry.
-- Se `gemini-1.5-flash` nao estiver disponivel para a chave atual, o servico tenta fallbacks Flash disponiveis automaticamente.
+- Se `gemini-2.5-flash` nao estiver disponivel para a chave atual, o servico tenta fallbacks Flash disponiveis automaticamente.
 
 ### Variaveis de ambiente da IA
 

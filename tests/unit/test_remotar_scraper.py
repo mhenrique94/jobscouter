@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
-from urllib.parse import urlparse, parse_qs
 
 from jobscouter.core.config import Settings
 from jobscouter.scrapers.remotar import RemotarScraper
-
 
 LISTING_HTML = """
 <html>
@@ -64,45 +63,45 @@ API_LISTING = {
 }
 
 API_LISTING_PAGE_1 = {
-  "meta": {"total": 3, "per_page": 1, "current_page": 1, "last_page": 3},
-  "data": [
-    {
-      "id": 1001,
-      "title": "Backend Engineer I",
-      "description": "<p>Backend work</p>",
-      "createdAt": "2026-03-26T16:01:06.642-03:00",
-      "externalLink": "https://example.com/apply/1001",
-      "company": {"name": "Acme 1"},
-    }
-  ],
+    "meta": {"total": 3, "per_page": 1, "current_page": 1, "last_page": 3},
+    "data": [
+        {
+            "id": 1001,
+            "title": "Backend Engineer I",
+            "description": "<p>Backend work</p>",
+            "createdAt": "2026-03-26T16:01:06.642-03:00",
+            "externalLink": "https://example.com/apply/1001",
+            "company": {"name": "Acme 1"},
+        }
+    ],
 }
 
 API_LISTING_PAGE_2 = {
-  "meta": {"total": 3, "per_page": 1, "current_page": 2, "last_page": 3},
-  "data": [
-    {
-      "id": 1002,
-      "title": "Backend Engineer II",
-      "description": "<p>Backend work 2</p>",
-      "createdAt": "2026-03-26T16:01:06.642-03:00",
-      "externalLink": "https://example.com/apply/1002",
-      "company": {"name": "Acme 2"},
-    }
-  ],
+    "meta": {"total": 3, "per_page": 1, "current_page": 2, "last_page": 3},
+    "data": [
+        {
+            "id": 1002,
+            "title": "Backend Engineer II",
+            "description": "<p>Backend work 2</p>",
+            "createdAt": "2026-03-26T16:01:06.642-03:00",
+            "externalLink": "https://example.com/apply/1002",
+            "company": {"name": "Acme 2"},
+        }
+    ],
 }
 
 API_LISTING_PAGE_3 = {
-  "meta": {"total": 3, "per_page": 1, "current_page": 3, "last_page": 3},
-  "data": [
-    {
-      "id": 1003,
-      "title": "Backend Engineer III",
-      "description": "<p>Backend work 3</p>",
-      "createdAt": "2026-03-26T16:01:06.642-03:00",
-      "externalLink": "https://example.com/apply/1003",
-      "company": {"name": "Acme 3"},
-    }
-  ],
+    "meta": {"total": 3, "per_page": 1, "current_page": 3, "last_page": 3},
+    "data": [
+        {
+            "id": 1003,
+            "title": "Backend Engineer III",
+            "description": "<p>Backend work 3</p>",
+            "createdAt": "2026-03-26T16:01:06.642-03:00",
+            "externalLink": "https://example.com/apply/1003",
+            "company": {"name": "Acme 3"},
+        }
+    ],
 }
 
 
@@ -111,7 +110,10 @@ async def test_remotar_parses_listing_and_detail() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if str(request.url) == "https://remotar.com.br":
             return httpx.Response(200, text=LISTING_HTML)
-        if str(request.url) == "https://remotar.com.br/job/132262/sur-global-services/full-stack-developer":
+        if (
+            str(request.url)
+            == "https://remotar.com.br/job/132262/sur-global-services/full-stack-developer"
+        ):
             return httpx.Response(200, text=DETAIL_HTML)
         return httpx.Response(404)
 
@@ -310,7 +312,7 @@ async def test_remotar_api_stops_at_checkpoint_date() -> None:
         scraper = RemotarScraper(client=client, settings=settings)
         jobs = await scraper.fetch_jobs(
             keyword="python",
-            checkpoint_date=datetime(2026, 3, 26, 19, 0, 0, tzinfo=timezone.utc),
+            checkpoint_date=datetime(2026, 3, 26, 19, 0, 0, tzinfo=UTC),
         )
 
     assert requests_by_page == [1, 2]

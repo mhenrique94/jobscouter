@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlmodel import select
 
@@ -22,7 +22,9 @@ def _positive_int(value: str) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Executa a analise de IA para vagas ready_for_ai.")
-    parser.add_argument("--limit", type=_positive_int, default=None, help="Limite de vagas para analisar.")
+    parser.add_argument(
+        "--limit", type=_positive_int, default=None, help="Limite de vagas para analisar."
+    )
     return parser
 
 
@@ -45,7 +47,7 @@ async def run_analysis(limit: int | None) -> None:
         for job in jobs:
             try:
                 result = await service.analyze_job(job)
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
 
                 job.ai_score = result.score
                 job.ai_summary = result.summary

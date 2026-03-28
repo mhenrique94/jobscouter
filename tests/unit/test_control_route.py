@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
-from jobscouter.api.deps import get_session
 import jobscouter.api.routes.control as control_route
+from jobscouter.api.deps import get_session
 from jobscouter.db.models import Job, JobStatus
 
 
@@ -114,4 +114,6 @@ def test_analyze_job_returns_422_for_discarded_job(monkeypatch) -> None:
     response = client.post(f"/api/v1/control/analyze/{job.id}")
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "Vagas descartadas nao podem ser analisadas individualmente."
+    assert (
+        response.json()["detail"] == "Vagas descartadas nao podem ser analisadas individualmente."
+    )

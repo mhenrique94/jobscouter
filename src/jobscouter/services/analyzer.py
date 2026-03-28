@@ -16,7 +16,6 @@ from jobscouter.core.logging import get_logger
 from jobscouter.db.models import Job
 from jobscouter.services.filter import JobFilterService
 
-
 PROFILE_TEXT = "Full-stack Developer, Python (Django), Vue.js, PostgreSQL, Linux, Nível Pleno"
 CANDIDATE_LOCATION_TEXT = "Brasil"
 
@@ -113,7 +112,9 @@ class AIAnalyzerService:
                     job.id,
                 )
             delay = max(self.settings.gemini_retry_delay_seconds, 0.5)
-            self.logger.warning("Rate limit no Gemini para vaga id=%s; retry em %.1fs.", job.id, delay)
+            self.logger.warning(
+                "Rate limit no Gemini para vaga id=%s; retry em %.1fs.", job.id, delay
+            )
             await asyncio.sleep(delay)
             response_text = await self._generate_json_response(prompt)
 
@@ -129,7 +130,9 @@ class AIAnalyzerService:
                 response = await asyncio.to_thread(
                     self.model.generate_content,
                     prompt,
-                    generation_config=self.genai.GenerationConfig(response_mime_type="application/json"),
+                    generation_config=self.genai.GenerationConfig(
+                        response_mime_type="application/json"
+                    ),
                 )
                 break
             except self.NotFound:
@@ -216,7 +219,7 @@ class AIAnalyzerService:
             "- Sem markdown. Sem texto fora do JSON.\n\n"
             f"Titulo da vaga: {job.title}\n"
             f"Descricao da vaga: {description}\n\n"
-            "Formato obrigatorio: {\"score\": <inteiro 0-10>, \"summary\": \"<texto curto>\"}"
+            'Formato obrigatorio: {"score": <inteiro 0-10>, "summary": "<texto curto>"}'
         )
 
     def _format_keywords(self, keywords: tuple[str, ...]) -> str:

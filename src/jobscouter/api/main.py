@@ -14,7 +14,6 @@ from jobscouter.core.logging import get_logger
 from jobscouter.db.session import engine
 from jobscouter.services.filter import FilterConfigService
 
-
 logger = get_logger("jobscouter.api.main")
 
 

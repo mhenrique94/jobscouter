@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
@@ -10,7 +10,7 @@ from jobscouter.services.filter import JobFilterService
 
 
 def _build_job(title: str, description_raw: str, status: JobStatus = JobStatus.pending) -> Job:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return Job(
         external_id="ext-1",
         title=title,
