@@ -4,6 +4,7 @@ import asyncio
 import importlib
 import json
 import re
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -77,7 +78,13 @@ class AIAnalyzerService:
         if not self.settings.gemini_api_key:
             raise ValueError("GEMINI_API_KEY nao configurada para analise de IA.")
 
-        self.genai = importlib.import_module("google.generativeai")
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r"(?s).*google\.generativeai.*",
+                category=FutureWarning,
+            )
+            self.genai = importlib.import_module("google.generativeai")
         exceptions_module = importlib.import_module("google.api_core.exceptions")
         self.ResourceExhausted = exceptions_module.ResourceExhausted
         self.NotFound = exceptions_module.NotFound

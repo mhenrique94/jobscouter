@@ -32,6 +32,7 @@ export interface BackgroundTaskAccepted {
 }
 
 const API_TIMEOUT_MS = 10_000;
+const ANALYZE_JOB_TIMEOUT_MS = 90_000;
 const API_BASE_PATH = process.env.NEXT_PUBLIC_API_BASE_PATH?.trim() || "/api/v1";
 
 export const api = axios.create({
@@ -72,6 +73,8 @@ export async function syncAnalyze(limit?: number): Promise<BackgroundTaskAccepte
 }
 
 export async function analyzeJob(jobId: number): Promise<Job> {
-  const response = await api.post<Job>(`/control/analyze/${jobId}`);
+  const response = await api.post<Job>(`/control/analyze/${jobId}`, null, {
+    timeout: ANALYZE_JOB_TIMEOUT_MS,
+  });
   return response.data;
 }

@@ -226,11 +226,11 @@ async def test_remotar_api_paginates_and_respects_max_pages() -> None:
 
 
 @pytest.mark.asyncio
-async def test_remotar_keyword_uses_search_url_and_api_fallback_with_query() -> None:
+async def test_remotar_keyword_uses_api_query_directly() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
         if url == "https://remotar.com.br/search?q=django":
-            return httpx.Response(200, text=EMPTY_HTML)
+            raise AssertionError("Keyword search nao deve consultar o HTML da Remotar")
         if url.startswith("https://api.remotar.com.br/jobs"):
             parsed = urlparse(url)
             query = parse_qs(parsed.query)

@@ -39,24 +39,29 @@ class RemotarScraper(BaseScraper):
         keyword: str | None = None,
         checkpoint_date: datetime | None = None,
     ) -> list[JobPayload]:
-        listing_url = self.settings.remotar_base_url
+        listings: list[RemotarListingItem] = []
         if keyword:
-            listing_url = f"{self.settings.remotar_base_url}/search?{urlencode({'q': keyword})}"
-
-        try:
-            html = await self._get_text(listing_url)
-            listings = self._extract_listing_items(html)
-        except Exception as exc:
-            self.logger.warning("Falha ao buscar listagem em %s; usando fallback para API: %s", listing_url, exc)
-            listings = []
-
-        if not listings:
             listings = await self._extract_listing_items_from_api(
                 limit=limit,
                 max_pages=max_pages,
                 keyword=keyword,
                 checkpoint_date=checkpoint_date,
             )
+        else:
+            listing_url = self.settings.remotar_base_url
+            try:
+                html = await self._get_text(listing_url)
+                listings = self._extract_listing_items(html)
+            except Exception as exc:
+                self.logger.warning("Falha ao buscar listagem em %s; usando fallback para API: %s", listing_url, exc)
+
+            if not listings:
+                listings = await self._extract_listing_items_from_api(
+                    limit=limit,
+                    max_pages=max_pages,
+                    keyword=keyword,
+                    checkpoint_date=checkpoint_date,
+                )
 
         jobs: list[JobPayload] = []
 

@@ -34,6 +34,13 @@ class BaseScraper(ABC):
             response = await self.client.get(url)
             response.raise_for_status()
             return response.text
+        except httpx.HTTPStatusError as exc:
+            self.logger.warning(
+                "Falha HTTP ao buscar %s: status=%s",
+                url,
+                exc.response.status_code,
+            )
+            raise
         except httpx.HTTPError as exc:
             self.logger.exception("Falha HTTP ao buscar %s: %s", url, exc)
             raise
@@ -43,6 +50,13 @@ class BaseScraper(ABC):
             response = await self.client.get(url)
             response.raise_for_status()
             return response.json()
+        except httpx.HTTPStatusError as exc:
+            self.logger.warning(
+                "Falha HTTP ao buscar JSON em %s: status=%s",
+                url,
+                exc.response.status_code,
+            )
+            raise
         except httpx.HTTPError as exc:
             self.logger.exception("Falha HTTP ao buscar JSON em %s: %s", url, exc)
             raise

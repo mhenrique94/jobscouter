@@ -31,16 +31,21 @@ lint-front:
 	@$(MAKE) -C web lint-front
 
 test:
-	@if [ "$(filter front,$(MAKECMDGOALS))" = "front" ]; then \
-		$(MAKE) -C web test front; \
+	@if [ -f .venv/bin/pytest ]; then \
+		.venv/bin/pytest $(ARGS); \
+	elif [ -f venv/bin/pytest ]; then \
+		venv/bin/pytest $(ARGS); \
 	else \
-		echo "Uso: make test front"; \
-		echo "Dica: make test-front"; \
+		echo "Ambiente virtual nao encontrado. Execute 'make bootstrap' primeiro."; \
 		exit 1; \
 	fi
 
 test-front:
-	@$(MAKE) -C web test-front
+	@if [ -f web/package.json ]; then \
+		$(MAKE) -C web test-front; \
+	else \
+		npm run test; \
+	fi
 
 front:
 	@:

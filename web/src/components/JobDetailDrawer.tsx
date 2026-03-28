@@ -158,6 +158,11 @@ export function JobDetailDrawer({ open, onOpenChange, job, onJobUpdated }: JobDe
       const fallbackMessage = "Falha ao analisar vaga individualmente.";
 
       if (axios.isAxiosError(error)) {
+        if (error.code === "ECONNABORTED") {
+          toast.error("A analise demorou mais que o esperado. Recarregue a lista em instantes para conferir o resultado.");
+          return;
+        }
+
         const detail = error.response?.data?.detail;
         if (typeof detail === "string" && detail.length > 0) {
           toast.error(detail);
