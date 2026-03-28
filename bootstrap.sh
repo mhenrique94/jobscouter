@@ -11,9 +11,7 @@ ENV_EXAMPLE_FILE="${PROJECT_ROOT}/.env.example"
 ENV_WAS_CREATED=0
 
 NO_SERVER=0
-if [[ "${1:-}" == "--bootstrap-only" ]]; then
-  NO_SERVER=1
-fi
+INSTALL_ONLY=0
 
 phase() {
   echo ""
@@ -27,6 +25,22 @@ ok() {
 fail() {
   echo "  - ERRO: $1" >&2
   exit 1
+}
+
+parse_args() {
+  case "${1:-}" in
+    "") ;;
+    --bootstrap-only)
+      NO_SERVER=1
+      ;;
+    --install-only)
+      NO_SERVER=1
+      INSTALL_ONLY=1
+      ;;
+    *)
+      fail "Parametro invalido: ${1}. Use --bootstrap-only ou --install-only"
+      ;;
+  esac
 }
 
 compute_hash() {
@@ -130,24 +144,39 @@ wait_for_postgres() {
   fail "PostgreSQL nao ficou pronto a tempo"
 }
 
-phase "1/7" "Pre-checagens"
-ensure_python
-resolve_compose_cmd
+parse_args "${1:-}"
 
-phase "2/7" "Arquivo de ambiente"
+TOTAL_PHASES=7
+if [[ "$INSTALL_ONLY" -eq 1 ]]; then
+  TOTAL_PHASES=4
+fi
+
+phase "1/${TOTAL_PHASES}" "Pre-checagens"
+ensure_python
+if [[ "$INSTALL_ONLY" -eq 0 ]]; then
+  resolve_compose_cmd
+fi
+
+phase "2/${TOTAL_PHASES}" "Arquivo de ambiente"
 ensure_env_file
 
 if [[ "$ENV_WAS_CREATED" -eq 1 ]]; then
   echo ""
   echo "[BLOQUEIO] O arquivo .env foi criado agora e requer revisao manual."
   echo "  - Preencha credenciais/chaves (ex.: GEMINI_API_KEY) e caminhos necessarios."
-  echo "  - Depois execute novamente: ./bootstrap.sh ou make bootstrap"
+  echo "  - Depois execute novamente: make install ou make run-back"
   exit 1
 fi
 
-phase "3/7" "Ambiente Python"
+phase "3/${TOTAL_PHASES}" "Ambiente Python"
 ensure_venv
 install_dependencies_if_needed
+
+if [[ "$INSTALL_ONLY" -eq 1 ]]; then
+  phase "4/4" "Finalizado (--install-only)"
+  ok "Dependencias do backend instaladas sem subir banco/API"
+  exit 0
+fi
 
 phase "4/7" "Banco de dados (Docker)"
 "${COMPOSE_CMD[@]}" up -d postgres >/dev/null

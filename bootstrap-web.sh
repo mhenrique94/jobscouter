@@ -11,9 +11,7 @@ ENV_EXAMPLE_FILE="${PROJECT_ROOT}/.env.example"
 ENV_WAS_CREATED=0
 
 NO_SERVER=0
-if [[ "${1:-}" == "--bootstrap-only" ]]; then
-  NO_SERVER=1
-fi
+INSTALL_ONLY=0
 
 phase() {
   echo ""
@@ -27,6 +25,22 @@ ok() {
 fail() {
   echo "  - ERRO: $1" >&2
   exit 1
+}
+
+parse_args() {
+  case "${1:-}" in
+    "") ;;
+    --bootstrap-only)
+      NO_SERVER=1
+      ;;
+    --install-only)
+      NO_SERVER=1
+      INSTALL_ONLY=1
+      ;;
+    *)
+      fail "Parametro invalido: ${1}. Use --bootstrap-only ou --install-only"
+      ;;
+  esac
 }
 
 compute_hash() {
@@ -109,22 +123,37 @@ install_dependencies_if_needed() {
   ok "Dependencias do frontend instaladas/atualizadas"
 }
 
-phase "1/3" "Pre-checagens frontend"
-ensure_web_dir
-ensure_node_tools
-ensure_env_file
+parse_args "${1:-}"
 
-if [[ "$ENV_WAS_CREATED" -eq 1 ]]; then
-  echo ""
-  echo "[BLOQUEIO] O arquivo .env da raiz foi criado agora e requer revisao manual."
-  echo "  - Ajuste as variaveis necessarias e execute novamente: ./bootstrap-web.sh ou make web"
-  exit 1
+TOTAL_PHASES=3
+if [[ "$INSTALL_ONLY" -eq 1 ]]; then
+  TOTAL_PHASES=2
 fi
 
-load_frontend_env
+phase "1/${TOTAL_PHASES}" "Pre-checagens frontend"
+ensure_web_dir
+ensure_node_tools
 
-phase "2/3" "Dependencias frontend"
+if [[ "$INSTALL_ONLY" -eq 0 ]]; then
+  ensure_env_file
+
+  if [[ "$ENV_WAS_CREATED" -eq 1 ]]; then
+    echo ""
+    echo "[BLOQUEIO] O arquivo .env da raiz foi criado agora e requer revisao manual."
+    echo "  - Ajuste as variaveis necessarias e execute novamente: make install-front ou make run-front"
+    exit 1
+  fi
+
+  load_frontend_env
+fi
+
+phase "2/${TOTAL_PHASES}" "Dependencias frontend"
 install_dependencies_if_needed
+
+if [[ "$INSTALL_ONLY" -eq 1 ]]; then
+  ok "Dependencias do frontend instaladas sem iniciar servidor"
+  exit 0
+fi
 
 if [[ "$NO_SERVER" -eq 1 ]]; then
   phase "3/3" "Finalizado (--bootstrap-only)"

@@ -1,20 +1,24 @@
-.PHONY: dev bootstrap bootstrap-only web web-bootstrap-only dev-full down lint lint-front test test-front front
+.PHONY: install prepare run-back install-front prepare-front run-front run-dev down lint lint-front test test-front front
 
-dev: bootstrap
+install:
+	./bootstrap.sh --install-only
 
-bootstrap:
-	./bootstrap.sh
-
-bootstrap-only:
+prepare:
 	./bootstrap.sh --bootstrap-only
 
-web:
-	./bootstrap-web.sh
+run-back:
+	./bootstrap.sh
 
-web-bootstrap-only:
+install-front:
+	./bootstrap-web.sh --install-only
+
+prepare-front:
 	./bootstrap-web.sh --bootstrap-only
 
-dev-full:
+run-front:
+	./bootstrap-web.sh
+
+run-dev:
 	./dev-full.sh
 
 down:
@@ -38,7 +42,7 @@ lint:
 		venv/bin/ruff check --fix src tests; \
 		venv/bin/ruff format src tests; \
 	else \
-		echo "Ruff nao encontrado no ambiente virtual. Execute 'make bootstrap' primeiro."; \
+		echo "Ruff nao encontrado no ambiente virtual. Execute 'make install' primeiro."; \
 		exit 1; \
 	fi
 
@@ -48,7 +52,7 @@ test:
 	elif [ -f venv/bin/pytest ]; then \
 		venv/bin/pytest $(ARGS); \
 	else \
-		echo "Ambiente virtual nao encontrado. Execute 'make bootstrap' primeiro."; \
+		echo "Ambiente virtual nao encontrado. Execute 'make install' primeiro."; \
 		exit 1; \
 	fi
 

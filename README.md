@@ -63,18 +63,24 @@ O matching e case-insensitive sobre titulo + descricao da vaga.
 
 ## Executando localmente
 
-### Comando unico inteligente (recomendado)
+### Comandos de backend (raiz do projeto)
 
-Use o bootstrap para preparar tudo e subir a API:
+Instalar apenas dependencias do backend:
 
 ```bash
-./bootstrap.sh
+make install
 ```
 
-Atalho recomendado:
+Preparar backend sem iniciar a API (inclui banco + migrations):
 
 ```bash
-make dev
+make prepare
+```
+
+Executar somente o backend (preparo completo + API):
+
+```bash
+make run-back
 ```
 
 Na primeira execucao (ou quando `pyproject.toml` mudar), ele:
@@ -92,18 +98,6 @@ Se o `.env` for criado pela primeira vez, o script interrompe a inicializacao pa
 
 Nas execucoes seguintes, ele reaproveita o cache e pula reinstalacao quando nada mudou.
 
-Para apenas preparar ambiente (sem iniciar a API):
-
-```bash
-./bootstrap.sh --bootstrap-only
-```
-
-ou:
-
-```bash
-make bootstrap-only
-```
-
 Para parar o banco:
 
 ```bash
@@ -118,14 +112,14 @@ make down
 
 ### Testes e qualidade do backend
 
-Depois de preparar o ambiente com `make bootstrap` ou `make dev`, voce pode usar os atalhos abaixo na raiz do projeto:
+Depois de preparar o ambiente com `make install` ou `make run-back`, voce pode usar os atalhos abaixo na raiz do projeto:
 
 - `make lint`
 	- executa `ruff check --fix src tests` e depois `ruff format src tests`.
 	- usado para ajustar e formatar automaticamente o codigo Python do backend e dos testes.
 
 - `make test`
-	- executa `pytest` no ambiente virtual configurado pelo bootstrap.
+	- executa `pytest` no ambiente virtual preparado por `make install` (ou por `make run-back`).
 	- aceita argumentos opcionais via `ARGS`, o que permite filtrar arquivos ou testes especificos.
 
 Exemplos:
@@ -146,7 +140,7 @@ O frontend fica na pasta `web` e usa Next.js 15 + TypeScript + Tailwind + Shadcn
 Use:
 
 ```bash
-make web
+make run-front
 ```
 
 Esse comando executa `./bootstrap-web.sh`, que:
@@ -159,10 +153,16 @@ Esse comando executa `./bootstrap-web.sh`, que:
 
 Se nada mudou no lockfile e `node_modules` ja existe, ele nao reinstala.
 
+Para instalar apenas dependencias do frontend (sem iniciar servidor):
+
+```bash
+make install-front
+```
+
 Para apenas preparar o frontend sem iniciar servidor:
 
 ```bash
-make web-bootstrap-only
+make prepare-front
 ```
 
 ### Subir frontend e backend juntos
@@ -170,7 +170,7 @@ make web-bootstrap-only
 Use:
 
 ```bash
-make dev-full
+make run-dev
 ```
 
 Esse fluxo:
@@ -180,7 +180,7 @@ Esse fluxo:
 3. prepara o frontend com `./bootstrap-web.sh --bootstrap-only`;
 4. inicia o frontend em foreground.
 
-Ao encerrar o comando (Ctrl+C), o backend em background e finalizado automaticamente.
+Ao encerrar o comando (Ctrl+C), o backend e frontend em background é finalizado automaticamente.
 
 ### Setup manual do frontend (opcional)
 
