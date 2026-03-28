@@ -12,6 +12,7 @@ export interface Job {
   status: JobStatus;
   ai_score: number | null;
   ai_summary: string | null;
+  ai_analysis_at: string | null;
 }
 
 export interface FilterConfig {
@@ -67,5 +68,10 @@ export async function syncAnalyze(limit?: number): Promise<BackgroundTaskAccepte
   const response = await api.post<BackgroundTaskAccepted>("/control/sync/analyze", null, {
     params: limit === undefined ? undefined : { limit },
   });
+  return response.data;
+}
+
+export async function analyzeJob(jobId: number): Promise<Job> {
+  const response = await api.post<Job>(`/control/analyze/${jobId}`);
   return response.data;
 }

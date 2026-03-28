@@ -27,15 +27,6 @@ down:
 		exit 1; \
 	fi
 
-lint:
-	@if [ "$(filter front,$(MAKECMDGOALS))" = "front" ]; then \
-		$(MAKE) -C web lint front; \
-	else \
-		echo "Uso: make lint front"; \
-		echo "Dica: make lint-front"; \
-		exit 1; \
-	fi
-
 lint-front:
 	@$(MAKE) -C web lint-front
 

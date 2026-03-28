@@ -125,6 +125,24 @@ export default function Home() {
     }
   };
 
+  const onJobUpdated = (updatedJob: Job) => {
+    setJobs((currentJobs) =>
+      currentJobs.map((job) => {
+        if (job.id === updatedJob.id) {
+          return updatedJob;
+        }
+        return job;
+      })
+    );
+
+    setSelectedJob((currentJob) => {
+      if (!currentJob || currentJob.id !== updatedJob.id) {
+        return currentJob;
+      }
+      return updatedJob;
+    });
+  };
+
   const jobsCount = useMemo(() => jobs.length, [jobs]);
 
   return (
@@ -275,7 +293,12 @@ export default function Home() {
           </section>
         ) : null}
 
-        <JobDetailDrawer open={drawerOpen} onOpenChange={setDrawerOpen} job={selectedJob} />
+        <JobDetailDrawer
+          open={drawerOpen}
+          onOpenChange={setDrawerOpen}
+          job={selectedJob}
+          onJobUpdated={onJobUpdated}
+        />
       </section>
     </main>
   );

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Literal
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 
 from jobscouter.api.deps import get_session
@@ -145,3 +145,48 @@ def sync_analyze(
     _ = db
     background_tasks.add_task(_run_analyze_sync, limit)
     return {"detail": "Analise iniciada em background."}
+
+
+@router.post(
+    "/analyze/{job_id}",
+    response_model=Job,
+    summary="Analisar uma vaga especifica",
+    description=(
+        "Executa analise de IA para uma vaga especifica e retorna a vaga atualizada. "
+        "Ideal para fluxo interativo no frontend sem esperar processamento em lote."
+    ),
+    response_description="Vaga atualizada com score, resumo e status analyzed.",
+)
+async def analyze_job(
+    job_id: int,
+    db: Session = Depends(get_session),
+) -> Job:
+    job = db.get(Job, job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vaga nao encontrada.")
+
+    if job.status == JobStatus.discarded:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Vagas descartadas nao podem ser analisadas individualmente.",
+        )
+
+    service = AIAnalyzerService(session=db)
+
+    try:
+        result = await service.analyze_job(job)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Falha na analise de IA: {exc}") from exc
+
+    now = datetime.now(timezone.utc)
+    job.ai_score = result.score
+    job.ai_summary = result.summary
+    job.ai_analysis_at = now
+    job.status = JobStatus.analyzed
+    job.updated_at = now
+
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job

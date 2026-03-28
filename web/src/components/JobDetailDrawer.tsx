@@ -1,11 +1,13 @@
 "use client";
 
+import axios from "axios";
 import DOMPurify from "dompurify";
-import { Bot, Building2, ExternalLink, FileText, Gauge, Sparkles } from "lucide-react";
-import { useMemo } from "react";
+import { Bot, Building2, ExternalLink, FileText, Gauge, Loader2, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Drawer,
@@ -16,12 +18,13 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import type { Job } from "@/lib/api";
+import { analyzeJob, type Job } from "@/lib/api";
 
 type JobDetailDrawerProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   job: Job | null;
+  onJobUpdated: (job: Job) => void;
 };
 
 const scoreStyle = (score: number | null) => {
@@ -76,6 +79,26 @@ const scoreLabel = (score: number | null) => {
   return "Baixa aderencia";
 };
 
+const analyzeButtonLabel = (status: Job["status"], analyzingJob: boolean) => {
+  if (analyzingJob) {
+    return "Analisando...";
+  }
+
+  if (status === "analyzed") {
+    return "Re-analisar vaga";
+  }
+
+  return "Analisar esta vaga";
+};
+
+const analyzeButtonVariant = (status: Job["status"]) => {
+  if (status === "analyzed") {
+    return "outline" as const;
+  }
+
+  return "default" as const;
+};
+
 const looksLikeHtml = (text: string) => /<\/?[a-z][\s\S]*>/i.test(text);
 
 function DescriptionContent({ content }: { content: string }) {
@@ -106,7 +129,48 @@ function DescriptionContent({ content }: { content: string }) {
   return <p className="text-sm leading-relaxed whitespace-pre-wrap">{trimmed}</p>;
 }
 
-export function JobDetailDrawer({ open, onOpenChange, job }: JobDetailDrawerProps) {
+export function JobDetailDrawer({ open, onOpenChange, job, onJobUpdated }: JobDetailDrawerProps) {
+  const [analyzingJob, setAnalyzingJob] = useState(false);
+  const [updatedAtLabel, setUpdatedAtLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    setUpdatedAtLabel(null);
+  }, [job?.id]);
+
+  const onAnalyzeJob = async () => {
+    if (!job || analyzingJob || job.status === "discarded") {
+      return;
+    }
+
+    try {
+      setAnalyzingJob(true);
+      const updatedJob = await analyzeJob(job.id);
+      onJobUpdated(updatedJob);
+      setUpdatedAtLabel(
+        new Date().toLocaleTimeString("pt-BR", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      );
+      toast.success("Vaga analisada com sucesso.");
+    } catch (error) {
+      const fallbackMessage = "Falha ao analisar vaga individualmente.";
+
+      if (axios.isAxiosError(error)) {
+        const detail = error.response?.data?.detail;
+        if (typeof detail === "string" && detail.length > 0) {
+          toast.error(detail);
+          return;
+        }
+      }
+
+      toast.error(fallbackMessage);
+    } finally {
+      setAnalyzingJob(false);
+    }
+  };
+
   return (
     <Drawer open={open} onOpenChange={onOpenChange} direction="right">
       <DrawerContent className="w-full p-0 data-[vaul-drawer-direction=right]:w-full data-[vaul-drawer-direction=right]:sm:w-[40vw] data-[vaul-drawer-direction=right]:sm:min-w-[520px] data-[vaul-drawer-direction=right]:sm:max-w-[800px]">
@@ -151,10 +215,17 @@ export function JobDetailDrawer({ open, onOpenChange, job }: JobDetailDrawerProp
 
               <Card className="border border-border/70 bg-gradient-to-br from-muted/30 via-muted/10 to-background">
                 <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center gap-2 text-sm">
-                    <Sparkles className="size-4 text-amber-300" />
-                    Resumo da Analise de IA
-                  </CardTitle>
+                  <div className="flex items-center justify-between gap-2">
+                    <CardTitle className="flex items-center gap-2 text-sm">
+                      <Sparkles className="size-4 text-amber-300" />
+                      Resumo da Analise de IA
+                    </CardTitle>
+                    {updatedAtLabel ? (
+                      <Badge variant="outline" className="h-6 bg-emerald-500/10 px-2 text-[11px] text-emerald-300">
+                        Atualizado {updatedAtLabel}
+                      </Badge>
+                    ) : null}
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-background/70 px-3 py-2">
@@ -175,9 +246,19 @@ export function JobDetailDrawer({ open, onOpenChange, job }: JobDetailDrawerProp
                     </div>
                   ) : (
                     <div className="rounded-lg border border-dashed border-border/80 bg-background/50 p-3 text-sm text-muted-foreground">
-                      Esta vaga ainda nao passou pela analise da IA. Clique em Run AI Analysis no topo para processar.
+                      Esta vaga ainda nao passou pela analise da IA. Clique em Analisar esta vaga para processar.
                     </div>
                   )}
+
+                  <Button
+                    type="button"
+                    variant={analyzeButtonVariant(job.status)}
+                    onClick={() => void onAnalyzeJob()}
+                    disabled={analyzingJob || job.status === "discarded"}
+                  >
+                    {analyzingJob ? <Loader2 className="animate-spin" /> : null}
+                    {analyzeButtonLabel(job.status, analyzingJob)}
+                  </Button>
                 </CardContent>
               </Card>
 
