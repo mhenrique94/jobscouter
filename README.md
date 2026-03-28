@@ -1,230 +1,128 @@
-# Jobscouter: Ingestao + Analise IA
+# JobScouter
 
-Projeto com dois modulos principais em Python 3.11+: ingestao de vagas e analise de compatibilidade por IA.
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Node LTS](https://img.shields.io/badge/Node-LTS-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Next.js 15](https://img.shields.io/badge/Next.js-15-000000?logo=next.js)](https://nextjs.org/)
+[![CI](https://img.shields.io/badge/CI-GitHub_Actions-2088FF?logo=githubactions&logoColor=white)](./.github/workflows/tests.yml)
+[![License MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-## Modulos do projeto
 
-- Modulo 1 - Ingestao e filtragem estatica:
-	- Coleta vagas das fontes suportadas, persiste no PostgreSQL com idempotencia e classifica status inicial (`pending`, `ready_for_ai`, `discarded`).
-	- Comando: `jobscouter-ingest`.
-- Modulo 2 - Analise por IA:
-	- Processa vagas `ready_for_ai`, calcula score de compatibilidade, gera resumo e fecha o processamento com status `analyzed`.
-	- Comando: `jobscouter-analyze`.
+## Visao Geral
 
-## Arquitetura
+O JobScouter resolve um problema pratico: buscar vagas em multiplas fontes, reduzir ruido de dados e transformar volume em decisao.
 
-- `BaseScraper`: contrato comum para qualquer nova fonte.
-- `RemoteOKScraper`: consome a API JSON da RemoteOK.
-- `RemotarScraper`: faz crawling HTML da Remotar e enriquece detalhes por vaga.
-- `JobIngestionService`: normaliza o fluxo de persistencia e garante idempotencia.
-- `JobFilterService`: classifica vagas com filtros estaticos antes da analise por IA.
-- `AIAnalyzerService`: analisa vagas `ready_for_ai` com Gemini e atribui score de compatibilidade.
-- `Job`: schema SQLModel para PostgreSQL, com constraints para deduplicacao e status de processamento.
+Em vez de apenas baixar anuncios, o sistema:
 
-## Modulo 1: Ingestao e Filtragem Estatica
+- centraliza a coleta de vagas;
+- aplica filtros de negocio para remover ruido cedo;
+- enriquece o resultado com analise de compatibilidade por IA;
+- disponibiliza dados estruturados via API e dashboard web.
 
-Após cada upsert, a vaga e classificada imediatamente para reduzir custo de processamento de IA.
+## Arquitetura do Ecossistema
 
-### Status da vaga
+Jornada do dado de ponta a ponta:
 
-- `pending`: vaga sem match de include/exclude (fila para revisao manual posterior).
-- `ready_for_ai`: vaga aprovada por conter ao menos uma `include_keyword`.
-- `discarded`: vaga descartada por conter ao menos uma `exclude_keyword`.
-- `analyzed`: vaga ja analisada; este status nao e sobrescrito pela filtragem estatica.
+```text
+Ingestao (Legacy Core)
+  -> coleta e deduplica vagas por fonte/URL
 
-### Motivo de descarte
+Analise (Legacy Core)
+  -> aplica filtros estaticos e, quando elegivel, score por IA
 
-- `filter_reason`: preenchido apenas quando `status=discarded`, com formato `Palavra excluida: <termo>`.
+API Service (FastAPI)
+  -> expoe consulta e gatilhos de sincronizacao de forma estruturada
 
-### Arquivo de regras
-
-As regras sao lidas de `filters.yaml` na raiz do projeto:
-
-```yaml
-search_terms: ["python", "django", "vue", "vuejs", "fullstack", "javascript", "nuxt"]
-
-filters:
-	exclude_keywords: ["Presencial", "Híbrido", "Junior", "Estágio", "PHP", "Java", "C#", "Rust"]
-	include_keywords: ["Remote", "Remoto", "Home Office", "Django", "Vue", "Python", "Fullstack", "Pleno", "Mid-level"]
+Dashboard (Next.js)
+  -> interface para visualizar e gerenciar oportunidades
 ```
 
-#### Termos de busca (search_terms)
+Componentes principais:
 
-A secao `search_terms` define quais termos-chave o scraper ira buscar ativamente em cada fonte.
-Quando o comando `jobscouter-ingest` e executado **sem o parametro `--keyword`**, ele itera sobre todos esses termos automaticamente, garantindo cobertura ampla e idempotencia (deduplicacao por constraints DB).
+- `BaseScraper`: contrato comum para novas fontes.
+- `RemoteOKScraper` e `RemotarScraper`: conectores de ingestao.
+- `JobIngestionService`: persistencia idempotente.
+- `JobFilterService`: filtros estaticos por palavras-chave.
+- `AIAnalyzerService`: compatibilidade por Gemini.
 
-#### Prioridade de classificacao
+## Quick Start
 
-1. Se encontrar qualquer `exclude_keyword`, define `discarded`.
-2. Caso passe pelo exclude e encontre alguma `include_keyword`, define `ready_for_ai`.
-3. Caso contrario, define `pending`.
+### Modo recomendado (Docker para banco + app local)
 
-O matching e case-insensitive sobre titulo + descricao da vaga.
-
-## Executando localmente
-
-### Comandos de backend (raiz do projeto)
-
-Instalar apenas dependencias do backend:
+Hoje, o `docker-compose.yml` sobe o PostgreSQL. API e frontend rodam com os scripts de bootstrap do projeto.
 
 ```bash
-make install
-```
-
-Preparar backend sem iniciar a API (inclui banco + migrations):
-
-```bash
-make prepare
-```
-
-Executar somente o backend (preparo completo + API):
-
-```bash
-make run-back
-```
-
-Na primeira execucao (ou quando `pyproject.toml` mudar), ele:
-
-1. valida Python 3.11+ e Docker Compose;
-2. cria `.env` a partir de `.env.example` (se necessario);
-3. cria/atualiza `.venv`;
-4. instala dependencias (`pip install -e .[dev]`) com cache por hash do `pyproject.toml`;
-5. sobe PostgreSQL (`docker compose up -d postgres`);
-6. espera o banco ficar pronto;
-7. aplica migrations (`alembic upgrade head`);
-8. inicia a API na porta 8000.
-
-Se o `.env` for criado pela primeira vez, o script interrompe a inicializacao para voce revisar credenciais/chaves obrigatorias e executar novamente.
-
-Nas execucoes seguintes, ele reaproveita o cache e pula reinstalacao quando nada mudou.
-
-Para parar o banco:
-
-```bash
-docker compose down
-```
-
-ou:
-
-```bash
-make down
-```
-
-### Testes e qualidade do backend
-
-Depois de preparar o ambiente com `make install` ou `make run-back`, voce pode usar os atalhos abaixo na raiz do projeto:
-
-- `make lint`
-	- executa `ruff check --fix src tests` e depois `ruff format src tests`.
-	- usado para ajustar e formatar automaticamente o codigo Python do backend e dos testes.
-
-- `make test`
-	- executa `pytest` no ambiente virtual preparado por `make install` (ou por `make run-back`).
-	- aceita argumentos opcionais via `ARGS`, o que permite filtrar arquivos ou testes especificos.
-
-Exemplos:
-
-```bash
-make lint
-make test
-make test ARGS="tests/unit -q"
-make test ARGS="-k analyzer"
-```
-
-## Frontend (Next.js)
-
-O frontend fica na pasta `web` e usa Next.js 15 + TypeScript + Tailwind + Shadcn/UI.
-
-### Comando inteligente para subir so o frontend
-
-Use:
-
-```bash
-make run-front
-```
-
-Esse comando executa `./bootstrap-web.sh`, que:
-
-1. valida `node` e `npm`;
-2. valida/carrega variaveis a partir do `.env` da raiz (sem `.env` separado em `web`);
-3. verifica se `web/package-lock.json` mudou (hash);
-4. instala dependencias somente quando necessario (`npm install`);
-5. inicia o Next.js em modo dev (`npm run dev`).
-
-Se nada mudou no lockfile e `node_modules` ja existe, ele nao reinstala.
-
-Para instalar apenas dependencias do frontend (sem iniciar servidor):
-
-```bash
-make install-front
-```
-
-Para apenas preparar o frontend sem iniciar servidor:
-
-```bash
-make prepare-front
-```
-
-### Subir frontend e backend juntos
-
-Use:
-
-```bash
+cp .env.example .env
+docker compose up -d postgres
 make run-dev
 ```
 
-Esse fluxo:
+Servicos locais apos subir:
 
-1. prepara o backend com `./bootstrap.sh --bootstrap-only`;
-2. sobe a API FastAPI em background na porta `8000`;
-3. prepara o frontend com `./bootstrap-web.sh --bootstrap-only`;
-4. inicia o frontend em foreground.
+- Frontend: `http://localhost:3000`
+- API: `http://localhost:8000`
+- Swagger: `http://localhost:8000/docs`
 
-Ao encerrar o comando (Ctrl+C), o backend e frontend em background é finalizado automaticamente.
-
-### Setup manual do frontend (opcional)
+### Alternativas rapidas
 
 ```bash
-cd web
-npm install
-npm run dev
+make run-back   # apenas backend (inclui bootstrap + API)
+make run-front  # apenas frontend
+make down       # derruba o postgres do compose
 ```
 
-Variaveis uteis no frontend (definidas no `.env` da raiz):
+## Configuracao de Ambiente
 
-- `NEXT_PUBLIC_API_BASE_URL` (padrao: `http://localhost:8000`)
-- `NEXT_PUBLIC_API_BASE_PATH` (padrao: vazio)
+O projeto usa `.env` na raiz (backend e frontend).
 
-### Qualidade de codigo do frontend
+Variaveis essenciais:
 
-Com o frontend preparado, voce pode validar o codigo a partir da raiz do projeto com:
+| Variavel | Obrigatoria | Default | Uso |
+| --- | --- | --- | --- |
+| `DATABASE_URL` | Sim | `postgresql+psycopg://postgres:postgres@localhost:5432/jobscouter` | Persistencia da API/CLI |
+| `LOG_LEVEL` | Nao | `INFO` | Nivel de log |
+| `REQUEST_TIMEOUT` | Nao | `20` | Timeout de requisicao HTTP |
+| `REMOTEOK_API_URL` | Nao | `https://remoteok.com/api` | Fonte RemoteOK |
+| `REMOTAR_BASE_URL` | Nao | `https://remotar.com.br` | Fonte Remotar |
+| `REMOTAR_API_URL` | Nao | `https://api.remotar.com.br` | Fonte Remotar |
+| `GEMINI_API_KEY` | Sim (analise IA) | - | Chave Gemini |
+| `GEMINI_MODEL` | Nao | `gemini-1.5-flash-latest` | Modelo preferencial |
+| `GEMINI_RETRY_DELAY_SECONDS` | Nao | `1.5` | Retry em rate limit |
+| `NEXT_PUBLIC_API_BASE_URL` | Nao | `http://localhost:8000` | URL da API no frontend |
+| `NEXT_PUBLIC_API_BASE_PATH` | Nao | vazio | Prefixo opcional de rota |
 
-- `make lint-front`
-	- executa o lint do frontend a partir da raiz, delegando para o projeto em `web/`.
-	- equivale ao fluxo de validacao de codigo do Next.js configurado no frontend.
+## Legado Funcional (Power User)
 
-- `make test-front`
-	- executa os testes do frontend a partir da raiz, delegando para o projeto em `web/`.
-	- equivale a rodar `npm run test` dentro da pasta `web`.
+Embora o JobScouter ofereca experiencia completa via API + Dashboard, os modulos de ingestao e analise podem rodar de forma independente para pipelines customizados.
 
-Exemplos:
+### CLI de ingestao
 
 ```bash
-make lint-front
-make test-front
+jobscouter-ingest --source all --limit 20
+jobscouter-ingest --source remoteok --keyword django --limit 10
 ```
 
-## API HTTP (FastAPI)
+### CLI de analise
 
-Com a API em execucao, a documentacao interativa fica em `http://127.0.0.1:8000/docs`.
+```bash
+jobscouter-analyze --limit 20
+```
 
-### Endpoints de consulta
+Regras de status utilizadas no fluxo:
+
+- `pending`: sem match de include/exclude.
+- `ready_for_ai`: passou no filtro e segue para IA.
+- `discarded`: vetada por palavra excluida.
+- `analyzed`: analise concluida.
+
+## API Service
+
+Endpoints principais:
 
 - `GET /api/v1/jobs`
-	- Query params opcionais:
-		- `status` (string): filtra por status (`pending`, `ready_for_ai`, `discarded`, `analyzed`)
-		- `min_score` (int): filtra por score minimo de IA
-		- `limit` (int, padrao `20`)
+- `POST /api/v1/control/sync/ingest`
+- `POST /api/v1/control/sync/analyze`
+- `GET /api/v1/config`
+- `PATCH /api/v1/config`
 
 Exemplo:
 
@@ -232,178 +130,34 @@ Exemplo:
 curl "http://127.0.0.1:8000/api/v1/jobs?status=analyzed&min_score=1&limit=10"
 ```
 
-### Endpoints de controle (background)
-
-Esses endpoints retornam `202 Accepted` imediatamente e executam o processamento em background, com logs no terminal da API.
-
-- `POST /api/v1/control/sync/ingest`
-	- Query params:
-		- `source` (`all` | `remoteok` | `remotar`, padrao `all`)
-		- `limit` (int, padrao `20`)
-
-Exemplo:
+## Qualidade
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/control/sync/ingest?source=remoteok&limit=5"
+make lint
+make test
+make lint-front
+make test-front
 ```
 
-- `POST /api/v1/control/sync/analyze`
-	- Query params:
-		- `limit` (int opcional)
+Obs.: no estado atual, `make test-front` roda um placeholder definido em `web/package.json`.
 
-Exemplo:
+## Roadmap e Extensibilidade
 
-```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/control/sync/analyze?limit=10"
-```
+- Multi-nicho: estrutura pronta para expansao alem de vagas de tech.
+- Novas fontes: onboarding de provedores adicionais com `BaseScraper`.
+- IA de matching: evoluir para comparacao curriculo vs vaga.
+- Maturidade de produto: ampliar observabilidade, testes frontend e deploy automatizado.
 
-Observacoes operacionais:
+## Contribuicao
 
-- A analise exige `GEMINI_API_KEY` valida no `.env`.
-- Se houver erro durante a task, a API continua respondendo e o detalhe aparece no log do servidor.
+Fluxo de colaboracao e padroes de commit estao em [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-1. Suba o PostgreSQL com `docker compose up -d`.
-2. Instale dependencias com `pip install -e .[dev]`.
-3. Exporte as variaveis do `.env.example`.
-4. Rode as migrations com `alembic upgrade head`.
-5. Execute a ingestao com `jobscouter-ingest --source all --limit 20`.
-6. Execute a analise com `jobscouter-analyze --limit 20`.
+Ao abrir contribuicoes, use os templates:
 
-## Modulo 2: Analise por IA (Gemini)
+- Issue de bug: [Bug Report](./.github/ISSUE_TEMPLATE/bug_report.md)
+- Issue de feature: [Feature Request](./.github/ISSUE_TEMPLATE/feature_request.md)
+- Pull request: [PR Template](./.github/pull_request_template.md)
 
-O comando `jobscouter-analyze` processa apenas vagas com `status=ready_for_ai`.
-Para cada vaga processada, o sistema preenche:
+## Licenca
 
-- `ai_score`: score inteiro de 0 a 10.
-- `ai_summary`: resumo curto da analise.
-- `ai_analysis_at`: timestamp da analise.
-
-Ao concluir a vaga, o status e atualizado para `analyzed`.
-
-### Regras de robustez
-
-- Prompt dinamico: injeta `include_keywords` e `exclude_keywords` do `filters.yaml` para orientar peso tecnico e penalizacoes.
-- O `summary` pede justificativa breve da nota antes da descricao da vaga.
-- Retorno exigido em JSON estrito com `score` e `summary`.
-- Vagas claramente nao-dev (ex.: contador, vendedor, design) recebem `score=0` imediatamente.
-- Em rate limit (`ResourceExhausted`), o servico aplica delay curto e retry.
-- Se `gemini-2.5-flash` nao estiver disponivel para a chave atual, o servico tenta fallbacks Flash disponiveis automaticamente.
-
-### Variaveis de ambiente da IA
-
-- `GEMINI_API_KEY`: chave da API Gemini.
-- `GEMINI_MODEL`: modelo preferencial (padrao: `gemini-1.5-flash-latest`).
-- `GEMINI_RETRY_DELAY_SECONDS`: atraso do retry em rate limit (padrao: `1.5`).
-
-### Configuracao recomendada no .env
-
-Use este baseline para evitar erro de modelo indisponivel:
-
-```env
-GEMINI_API_KEY=<sua_chave>
-GEMINI_MODEL=models/gemini-2.5-flash-lite
-GEMINI_RETRY_DELAY_SECONDS=1.5
-```
-
-### Exemplo de execucao
-
-- Ingestao: `jobscouter-ingest --source all --limit 20`
-- Analise: `jobscouter-analyze --limit 20`
-
-### Troubleshooting (IA)
-
-- Erro `GEMINI_API_KEY nao configurada`:
-	- Garanta que `GEMINI_API_KEY` esteja definida no `.env`.
-	- Rode com: `set -a && source .env && set +a` antes do comando.
-
-- Erro `NotFound ... model ... is not found for API version v1beta`:
-	- Algumas chaves nao possuem `gemini-1.5-flash` habilitado.
-	- O servico tenta fallback automatico para modelos Flash disponiveis.
-	- Se quiser forcar um modelo conhecido na sua conta, defina `GEMINI_MODEL` (ex.: `models/gemini-2.5-flash`).
-
-- Warning de deprecacao da biblioteca `google.generativeai`:
-	- O warning nao bloqueia execucao.
-	- O projeto segue este pacote por compatibilidade atual; migracao futura para `google.genai` e recomendada.
-
-### Listar modelos disponiveis da sua chave
-
-Use o comando abaixo para descobrir quais modelos Flash aceitam `generateContent` na sua conta:
-
-```bash
-set -a && source .env && set +a
-/home/marcelo/Github/jobscouter/.venv/bin/python - <<'PY'
-import os
-import google.generativeai as genai
-
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-for model in genai.list_models():
-		methods = getattr(model, "supported_generation_methods", []) or []
-		if "generateContent" in methods and "flash" in model.name.lower():
-				print(model.name)
-PY
-```
-
-## Parametros do Modulo 1 (Ingestao)
-
-A busca e finita por padrao: sem `--continuous`, o comando executa 1 ciclo e encerra.
-
-### Parametros
-
-- `--source {all,remoteok,remotar}`: escolhe a fonte.
-- `--keyword TERMO`: busca explicita por um termo especifico. Quando omitido, o scraper itera sobre todos os termos definidos em `search_terms` no `filters.yaml`. Cada busca respeita a idempotencia do banco de dados.
-- `--limit N`: limita a quantidade de vagas processadas por fonte **e por cada termo** em cada ciclo.
-- `--max-pages N`: limita quantas paginas da listagem da API da Remotar podem ser consultadas por ciclo.
-- `--continuous`: habilita modo continuo (ciclos sucessivos).
-- `--poll-interval-seconds N`: intervalo entre ciclos no modo continuo (padrao: `300`).
-- `--max-cycles N`: encerra apos N ciclos (somente com `--continuous`).
-- `--max-duration-seconds N`: encerra quando atingir N segundos totais (somente com `--continuous`).
-- `--max-empty-cycles N`: encerra apos N ciclos seguidos sem vagas novas/atualizadas (somente com `--continuous`).
-
-### Timeout de rede
-
-- `REQUEST_TIMEOUT`: timeout por requisicao HTTP em segundos (padrao: `20`).
-
-### Exemplos
-
-- Rodada unica com limite por fonte (itera sobre todos os `search_terms` do YAML): `jobscouter-ingest --source all --limit 20`
-- Rodada unica com busca especifica: `jobscouter-ingest --source remoteok --keyword django --limit 10`
-- Ambas fontes, somente termo 'python': `jobscouter-ingest --source all --keyword python --limit 5`
-- Rodando continuamente, com pausa de 2 minutos e limite de 10 ciclos: `jobscouter-ingest --source all --continuous --poll-interval-seconds 120 --max-cycles 10`
-- Rodando continuamente por no maximo 1 hora: `jobscouter-ingest --source all --continuous --max-duration-seconds 3600`
-- Rodando ate ficar 3 ciclos seguidos sem novidades: `jobscouter-ingest --source all --continuous --max-empty-cycles 3`
-- Forcando no maximo 2 paginas da API da Remotar por ciclo: `jobscouter-ingest --source remotar --max-pages 2`
-
-### Busca ativa por termos
-
-Por padrao, o scraper itera sobre todos os `search_terms` definidos no arquivo de configuracao.
-Cada termo dispara uma busca independente em cada fonte, com um delay automatico de 2 segundos entre termos para reduzir risco de bloqueio por frequencia:
-
-**Exemplo de fluxo:**
-
-```
-Ciclo 1
-  RemoteOK + 'python'    -> 10 vagas
-  (sleep 2s)
-  RemoteOK + 'django'    -> 4 vagas
-  (sleep 2s)
-  ... continua para todos os termos ...
-  Remotar + 'python'     -> 10 vagas
-  (sleep 2s)
-  ... e assim por diante
-```
-
-**Idempotencia garantida**: mesmo se uma vaga aparecer em multiplos termos (ex.: Python + Django),
-os constraints unicos no banco de dados (`source` + `external_id`, `source` + `url`) impedem duplicatas.
-A vaga e inserida apenas uma vez, mas seu `last_seen_at` e atualizado em cada ciclo.
-
-#### Comportamento do Remotar com busca
-
-- **Com termo**: tenta buscar via `/search?q={termo}` primeiro. Se falhar (404), faz fallback automatico para a API com parametro de busca.
-- **Sem termo** (home page): consulta a listagem da home e, se vazia, faz fallback para API.
-
-Esse comportamento garante resiliencia: mesmo que o endpoint de busca mude ou nao exista, o scraper continua funcionando via API.
-
-## Fontes suportadas
-
-- RemoteOK
-- Remotar
+Este projeto esta sob a licenca MIT. Veja [LICENSE](./LICENSE).
