@@ -22,6 +22,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        EDITABLE: "true"
     env_file:
       - .env
     environment:

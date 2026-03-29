@@ -14,7 +14,8 @@ COPY alembic.ini ./alembic.ini
 COPY filters.yaml ./filters.yaml
 COPY docker/backend-entrypoint.sh ./docker/backend-entrypoint.sh
 
-RUN pip install --no-cache-dir -e .
+ARG EDITABLE=false
+RUN if [ "$EDITABLE" = "true" ]; then pip install --no-cache-dir -e .; else pip install --no-cache-dir .; fi
 RUN chmod +x ./docker/backend-entrypoint.sh
 
 EXPOSE 8000
