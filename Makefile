@@ -32,7 +32,7 @@ down:
 	fi
 
 logs:
-	@docker logs -f jobscouter-nginx
+	@docker compose logs -f
 
 logs-back:
 	@docker logs -f jobscouter-backend
