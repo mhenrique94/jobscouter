@@ -132,7 +132,7 @@ wait_for_postgres() {
   local attempt=1
 
   while [[ "$attempt" -le "$max_attempts" ]]; do
-    if "${COMPOSE_CMD[@]}" exec -T postgres pg_isready -U postgres >/dev/null 2>&1; then
+    if "${COMPOSE_CMD[@]}" exec -T db pg_isready -U postgres >/dev/null 2>&1; then
       ok "PostgreSQL pronto"
       return
     fi
@@ -179,8 +179,8 @@ if [[ "$INSTALL_ONLY" -eq 1 ]]; then
 fi
 
 phase "4/7" "Banco de dados (Docker)"
-"${COMPOSE_CMD[@]}" up -d postgres >/dev/null
-ok "Container postgres iniciado"
+"${COMPOSE_CMD[@]}" up -d db >/dev/null
+ok "Container db (PostgreSQL) iniciado"
 wait_for_postgres
 
 phase "5/7" "Migracoes"

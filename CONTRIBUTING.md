@@ -24,23 +24,33 @@ Seja respeitoso, objetivo e colaborativo em issues, PRs e revisoes.
 cp .env.example .env
 ```
 
-3. Suba o banco local.
+3. Suba a stack completa com Docker Compose (db + backend + frontend + nginx).
 
 ```bash
-docker compose up -d postgres
+docker compose up -d --build
 ```
 
-4. Suba backend + frontend em modo desenvolvimento.
+4. Valide os endpoints principais.
+
+```bash
+curl -i http://localhost/
+curl -i http://localhost/api/v1/jobs
+```
+
+Para manter `/docs` e `/openapi.json` acessiveis apenas fora de producao, use `APP_ENV=development` em ambientes de contribuicao e `APP_ENV=production` em deploy de producao.
+
+Alternativas em modo local (sem stack completa):
 
 ```bash
 make run-dev
-```
-
-Alternativas:
-
-```bash
 make run-back
 make run-front
+```
+
+Encerrar stack de containers:
+
+```bash
+docker compose down
 ```
 
 ## Protecao da Branch Main
@@ -141,6 +151,16 @@ make lint
 make test
 make lint-front
 make test-front
+docker compose config
+```
+
+Smoke test recomendado quando houver mudancas de deploy/infra:
+
+```bash
+docker compose up -d --build
+curl -i http://localhost/
+curl -i http://localhost/api/v1/jobs
+docker compose down
 ```
 
 Observacao: atualmente `make test-front` executa um placeholder no frontend.

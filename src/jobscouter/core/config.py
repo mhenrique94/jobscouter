@@ -13,6 +13,7 @@ load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 @dataclass(frozen=True, slots=True)
 class Settings:
+    app_env: str
     database_url: str
     log_level: str
     request_timeout: float
@@ -24,9 +25,14 @@ class Settings:
     gemini_model: str
     gemini_retry_delay_seconds: float
 
+    @property
+    def is_production(self) -> bool:
+        return self.app_env in {"production", "prod"}
+
     @classmethod
     def from_env(cls) -> Settings:
         return cls(
+            app_env=os.getenv("APP_ENV", "development").strip().lower(),
             database_url=os.getenv(
                 "DATABASE_URL",
                 "postgresql+psycopg://postgres:postgres@localhost:5432/jobscouter",
