@@ -1,5 +1,6 @@
 services:
   db:
+    container_name: jobscouter-db
     image: postgres:16
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-jobscouter}
@@ -19,6 +20,7 @@ services:
       - app_net
 
   backend:
+    container_name: jobscouter-backend
     build:
       context: .
       dockerfile: Dockerfile
@@ -42,6 +44,7 @@ services:
       - app_net
 
   frontend:
+    container_name: jobscouter-frontend
     build:
       context: ./web
       dockerfile: Dockerfile
@@ -62,6 +65,7 @@ services:
       - app_net
 
   nginx:
+    container_name: jobscouter-nginx
     image: nginx:1.27-alpine
     depends_on:
       backend:

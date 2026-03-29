@@ -1,4 +1,4 @@
-.PHONY: install prepare run-back install-front prepare-front run-front run-dev down lint lint-front test test-front front
+.PHONY: install prepare run-back install-front prepare-front run-front run-dev down lint lint-front test test-front front logs logs-back logs-front logs-nginx sh-back sh-front sh-db
 
 install:
 	./bootstrap.sh --install-only
@@ -30,6 +30,27 @@ down:
 		echo "Docker Compose nao encontrado (docker compose ou docker-compose)"; \
 		exit 1; \
 	fi
+
+logs:
+	@docker logs -f jobscouter-nginx
+
+logs-back:
+	@docker logs -f jobscouter-backend
+
+logs-front:
+	@docker logs -f jobscouter-frontend
+
+logs-nginx:
+	@docker logs -f jobscouter-nginx
+
+sh-back:
+	@docker exec -it jobscouter-backend sh
+
+sh-front:
+	@docker exec -it jobscouter-frontend sh
+
+sh-db:
+	@docker exec -it jobscouter-db sh
 
 lint-front:
 	@$(MAKE) -C web lint-front
