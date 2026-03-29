@@ -23,10 +23,16 @@ class Settings:
     gemini_api_key: str
     gemini_model: str
     gemini_retry_delay_seconds: float
+    app_env: str = "development"
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env in {"production", "prod"}
 
     @classmethod
     def from_env(cls) -> Settings:
         return cls(
+            app_env=os.getenv("APP_ENV", "development").strip().lower(),
             database_url=os.getenv(
                 "DATABASE_URL",
                 "postgresql+psycopg://postgres:postgres@localhost:5432/jobscouter",

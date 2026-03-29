@@ -46,28 +46,36 @@ Componentes principais:
 
 ## Quick Start
 
-### Modo recomendado (Docker para banco + app local)
-
-Hoje, o `docker-compose.yml` sobe o PostgreSQL. API e frontend rodam com os scripts de bootstrap do projeto.
+### Modo recomendado (Deploy unificado com Docker Compose + NGINX)
 
 ```bash
 cp .env.example .env
-docker compose up -d postgres
-make run-dev
+docker compose up -d --build
 ```
 
-Servicos locais apos subir:
+Servicos disponiveis apos subir:
 
-- Frontend: `http://localhost:3000`
-- API: `http://localhost:8000`
-- Swagger: `http://localhost:8000/docs`
+- Entrada unica (NGINX): `http://localhost`
+- Frontend via proxy: `http://localhost/`
+- API via proxy: `http://localhost/api/v1`
+- Swagger via proxy: `http://localhost/docs`
 
 ### Alternativas rapidas
+
+Modo local (sem stack completa de containers):
 
 ```bash
 make run-back   # apenas backend (inclui bootstrap + API)
 make run-front  # apenas frontend
-make down       # derruba o postgres do compose
+make run-dev    # backend + frontend locais (db via compose)
+make down       # derruba os servicos do compose
+```
+
+Operacoes uteis no modo containerizado:
+
+```bash
+docker compose logs -f
+docker compose down
 ```
 
 ## Configuracao de Ambiente
@@ -78,6 +86,7 @@ Variaveis essenciais:
 
 | Variavel | Obrigatoria | Default | Uso |
 | --- | --- | --- | --- |
+| `APP_ENV` | Nao | `development` | Ambiente de execucao; em `production` a API desabilita `/docs` e `/openapi.json` |
 | `DATABASE_URL` | Sim | `postgresql+psycopg://postgres:postgres@localhost:5432/jobscouter` | Persistencia da API/CLI |
 | `LOG_LEVEL` | Nao | `INFO` | Nivel de log |
 | `REQUEST_TIMEOUT` | Nao | `20` | Timeout de requisicao HTTP |
@@ -87,8 +96,15 @@ Variaveis essenciais:
 | `GEMINI_API_KEY` | Sim (analise IA) | - | Chave Gemini |
 | `GEMINI_MODEL` | Nao | `gemini-1.5-flash-latest` | Modelo preferencial |
 | `GEMINI_RETRY_DELAY_SECONDS` | Nao | `1.5` | Retry em rate limit |
-| `NEXT_PUBLIC_API_BASE_URL` | Nao | `http://localhost:8000` | URL da API no frontend |
-| `NEXT_PUBLIC_API_BASE_PATH` | Nao | vazio | Prefixo opcional de rota |
+| `DATABASE_URL_DOCKER` | Nao | `postgresql+psycopg://postgres:postgres@db:5432/jobscouter` | URL do banco usada no servico backend do Compose |
+| `POSTGRES_DB` | Nao | `jobscouter` | Nome do banco no servico db |
+| `POSTGRES_USER` | Nao | `postgres` | Usuario do banco no servico db |
+| `POSTGRES_PASSWORD` | Sim | - | Senha do banco no servico db (defina valor forte) |
+| `NEXT_PUBLIC_API_BASE_PATH` | Nao | `/api/v1` | Base relativa da API no frontend |
+| `NEXT_PUBLIC_API_BASE_URL` | Nao | vazio | URL do backend para rewrite no modo local sem NGINX |
+
+Observacao: para ambiente de producao, defina `APP_ENV=production` para desabilitar publicamente os endpoints de documentacao da API (`/docs`, `/openapi.json` e `/redoc`).
+Observacao: variaveis `NEXT_PUBLIC_*` sao build-time no Next.js; alterar `NEXT_PUBLIC_API_BASE_PATH` ou `NEXT_PUBLIC_API_BASE_URL` exige rebuild da imagem frontend (`docker compose up -d --build`).
 
 ## Legado Funcional (Power User)
 
