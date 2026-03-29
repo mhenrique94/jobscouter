@@ -22,11 +22,9 @@ class JobStatus(str, Enum):
 class Job(SQLModel, table=True):
     __tablename__ = "jobs"
     __table_args__ = (
-        UniqueConstraint(
-            "source", "external_id", "search_keyword", name="uq_jobs_source_external_id_keyword"
-        ),
-        UniqueConstraint("source", "url", "search_keyword", name="uq_jobs_source_url_keyword"),
-        Index("ix_jobs_source_keyword_created_at", "source", "search_keyword", "created_at"),
+        UniqueConstraint("source", "external_id", name="uq_jobs_source_external_id"),
+        UniqueConstraint("source", "url", name="uq_jobs_source_url"),
+        Index("ix_jobs_source_created_at", "source", "created_at"),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -35,7 +33,7 @@ class Job(SQLModel, table=True):
     company: str = Field(nullable=False, max_length=255, index=True)
     url: str = Field(sa_column=Column(Text, nullable=False))
     source: str = Field(nullable=False, max_length=50, index=True)
-    search_keyword: str | None = Field(default=None, max_length=255)
+    search_keywords: list[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     description_raw: str = Field(default="", sa_column=Column(Text, nullable=False))
     location: str | None = Field(default=None, max_length=255)
     salary: str | None = Field(default=None, max_length=255)
