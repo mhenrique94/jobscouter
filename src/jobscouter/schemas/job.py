@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from jobscouter.db.models import Job
+
 
 def utcnow() -> datetime:
     return datetime.now(UTC)
@@ -34,3 +36,10 @@ class JobPayload(BaseModel):
     @classmethod
     def normalize_source(cls, value: str) -> str:
         return value.lower()
+
+
+class PaginatedJobsResponse(BaseModel):
+    items: list[Job]
+    total: int
+    page: int
+    size: int

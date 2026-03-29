@@ -3,23 +3,25 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlmodel import Session, col, select
 
 from jobscouter.api.deps import get_session
 from jobscouter.db.models import Job, JobStatus
+from jobscouter.schemas.job import PaginatedJobsResponse
 
 router = APIRouter(tags=["jobs"])
 
 
 @router.get(
     "/jobs",
-    response_model=list[Job],
+    response_model=PaginatedJobsResponse,
     summary="Listar vagas",
     description=(
         "Retorna vagas persistidas com filtros opcionais por status e score minimo de IA. "
         "Use para explorar rapidamente o pipeline de ingestao e analise."
     ),
-    response_description="Lista de vagas encontradas.",
+    response_description="Lista paginada de vagas encontradas.",
 )
 def list_jobs(
     session: Annotated[Session, Depends(get_session)],
@@ -29,8 +31,14 @@ def list_jobs(
     min_score: int | None = Query(
         default=None, description="Filtra vagas com ai_score maior ou igual ao valor informado."
     ),
-    limit: int = Query(default=20, ge=1, description="Quantidade maxima de vagas retornadas."),
-) -> list[Job]:
+    page: int = Query(default=1, ge=1, description="Pagina atual (inicia em 1)."),
+    size: int = Query(
+        default=50,
+        ge=1,
+        le=100,
+        description="Quantidade de vagas por pagina (maximo 100).",
+    ),
+) -> PaginatedJobsResponse:
     statement = select(Job)
 
     if status is not None:
@@ -48,5 +56,17 @@ def list_jobs(
             col(Job.ai_score) >= min_score
         )
 
-    statement = statement.limit(limit)
-    return list(session.exec(statement).all())
+    total_statement = statement.with_only_columns(
+        func.count(), maintain_column_froms=True
+    ).order_by(None)
+    total = int(session.exec(total_statement).one())
+
+    offset = (page - 1) * size
+    items_statement = (
+        statement.order_by(col(Job.created_at).desc(), col(Job.id).desc())
+        .offset(offset)
+        .limit(size)
+    )
+    items = list(session.exec(items_statement).all())
+
+    return PaginatedJobsResponse(items=items, total=total, page=page, size=size)

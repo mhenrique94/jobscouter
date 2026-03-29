@@ -140,11 +140,47 @@ Endpoints principais:
 - `GET /api/v1/config`
 - `PATCH /api/v1/config`
 
-Exemplo:
+### Listagem de vagas com paginacao
+
+Query params suportados em `GET /api/v1/jobs`:
+
+- `page` (opcional, default: `1`, minimo: `1`)
+- `size` (opcional, default: `50`, minimo: `1`, maximo: `100`)
+- `status` (opcional: `pending`, `ready_for_ai`, `discarded`, `analyzed`)
+- `min_score` (opcional)
+
+Exemplo de requisicao:
 
 ```bash
-curl "http://127.0.0.1:8000/api/v1/jobs?status=analyzed&min_score=1&limit=10"
+curl "http://127.0.0.1:8000/api/v1/jobs?page=2&size=20&status=analyzed&min_score=1"
 ```
+
+Exemplo de resposta:
+
+```json
+{
+  "items": [
+    {
+      "id": 101,
+      "title": "Python Developer",
+      "company": "Acme",
+      "url": "https://example.com/jobs/101",
+      "description_raw": "...",
+      "status": "analyzed",
+      "ai_score": 8,
+      "ai_summary": "Boa aderencia para backend Python.",
+      "ai_analysis_at": "2026-03-28T18:20:31Z"
+    }
+  ],
+  "total": 240,
+  "page": 2,
+  "size": 20
+}
+```
+
+## Frontend Web
+
+Detalhes de desenvolvimento do dashboard Next.js (variaveis, scripts e comportamento de paginacao por URL) estao em [web/README.md](./web/README.md).
 
 ## Qualidade
 
