@@ -4,9 +4,9 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-jobscouter}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -26,7 +26,7 @@ services:
       - .env
     environment:
       APP_ENV: ${APP_ENV:-development}
-      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql+psycopg://postgres:postgres@db:5432/jobscouter}
+      DATABASE_URL: ${DATABASE_URL_DOCKER:?DATABASE_URL_DOCKER is required}
     depends_on:
       db:
         condition: service_healthy
@@ -42,8 +42,6 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_BASE_PATH: /api/v1
-    environment:
-      NEXT_PUBLIC_API_BASE_PATH: /api/v1
     depends_on:
       backend:
         condition: service_started

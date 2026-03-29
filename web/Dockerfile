@@ -16,10 +16,8 @@ WORKDIR /app
 ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0 \
     PORT=3000
-COPY package*.json ./
-RUN npm ci --omit=dev
-COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/next.config.ts ./next.config.ts
 EXPOSE 3000
-CMD ["npm", "run", "start", "--", "-H", "0.0.0.0", "-p", "3000"]
+CMD ["node", "server.js"]

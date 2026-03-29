@@ -99,10 +99,12 @@ Variaveis essenciais:
 | `DATABASE_URL_DOCKER` | Nao | `postgresql+psycopg://postgres:postgres@db:5432/jobscouter` | URL do banco usada no servico backend do Compose |
 | `POSTGRES_DB` | Nao | `jobscouter` | Nome do banco no servico db |
 | `POSTGRES_USER` | Nao | `postgres` | Usuario do banco no servico db |
-| `POSTGRES_PASSWORD` | Nao | `postgres` | Senha do banco no servico db |
+| `POSTGRES_PASSWORD` | Sim | - | Senha do banco no servico db (defina valor forte) |
 | `NEXT_PUBLIC_API_BASE_PATH` | Nao | `/api/v1` | Base relativa da API no frontend |
+| `NEXT_PUBLIC_API_BASE_URL` | Nao | vazio | URL do backend para rewrite no modo local sem NGINX |
 
-Observacao: para ambiente de producao, defina `APP_ENV=production` para desabilitar publicamente os endpoints de documentacao da API.
+Observacao: para ambiente de producao, defina `APP_ENV=production` para desabilitar publicamente os endpoints de documentacao da API (`/docs`, `/openapi.json` e `/redoc`).
+Observacao: variaveis `NEXT_PUBLIC_*` sao build-time no Next.js; alterar `NEXT_PUBLIC_API_BASE_PATH` ou `NEXT_PUBLIC_API_BASE_URL` exige rebuild da imagem frontend (`docker compose up -d --build`).
 
 ## Legado Funcional (Power User)
 

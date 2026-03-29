@@ -12,9 +12,11 @@ COPY src ./src
 COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
 COPY filters.yaml ./filters.yaml
+COPY docker/backend-entrypoint.sh ./docker/backend-entrypoint.sh
 
 RUN pip install --no-cache-dir .
+RUN chmod +x ./docker/backend-entrypoint.sh
 
 EXPOSE 8000
 
-CMD ["uvicorn", "jobscouter.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["./docker/backend-entrypoint.sh"]

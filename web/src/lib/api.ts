@@ -33,7 +33,7 @@ export interface BackgroundTaskAccepted {
 
 const API_TIMEOUT_MS = 10_000;
 const ANALYZE_JOB_TIMEOUT_MS = 90_000;
-const API_BASE_PATH = "/api/v1";
+const API_BASE_PATH = process.env.NEXT_PUBLIC_API_BASE_PATH?.trim() || "/api/v1";
 
 export const api = axios.create({
   baseURL: API_BASE_PATH,

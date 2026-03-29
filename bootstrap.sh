@@ -130,9 +130,10 @@ install_dependencies_if_needed() {
 wait_for_postgres() {
   local max_attempts=30
   local attempt=1
+  local postgres_user="${POSTGRES_USER:-postgres}"
 
   while [[ "$attempt" -le "$max_attempts" ]]; do
-    if "${COMPOSE_CMD[@]}" exec -T db pg_isready -U postgres >/dev/null 2>&1; then
+    if "${COMPOSE_CMD[@]}" exec -T db pg_isready -U "$postgres_user" >/dev/null 2>&1; then
       ok "PostgreSQL pronto"
       return
     fi

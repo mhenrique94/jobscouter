@@ -165,6 +165,24 @@ docker compose down
 
 Observacao: atualmente `make test-front` executa um placeholder no frontend.
 
+## Seguranca de Segredos
+
+Para evitar alertas de secret scanning (GitGuardian/GitHub Advanced Security), siga estas regras:
+
+- Nunca commitar `.env`.
+- Em `.env.example`, use apenas placeholders (`CHANGE_ME_*`) para chaves e senhas.
+- Evite defaults sensiveis em `docker-compose.yml` (ex.: senha padrao hardcoded).
+- Prefira variaveis obrigatorias no compose para credenciais criticas.
+
+Checklist rapido de seguranca antes de abrir PR:
+
+```bash
+docker compose config
+git diff -- .env .env.example docker-compose.yml
+```
+
+Se aparecer qualquer valor real de credencial no diff, remova antes do push.
+
 ## Pull Requests
 
 Use o template em `.github/pull_request_template.md` e inclua:
