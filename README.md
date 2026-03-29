@@ -97,6 +97,7 @@ Variaveis essenciais:
 | `GEMINI_MODEL` | Nao | `gemini-1.5-flash-latest` | Modelo preferencial |
 | `GEMINI_RETRY_DELAY_SECONDS` | Nao | `1.5` | Retry em rate limit |
 | `DATABASE_URL_DOCKER` | Nao | `postgresql+psycopg://postgres:postgres@db:5432/jobscouter` | URL do banco usada no servico backend do Compose |
+| `BACKEND_EDITABLE` | Nao | `false` | Controla install editavel no build do backend (`true` para hot reload com bind mount; `false` para imagem mais proxima de producao) |
 | `POSTGRES_DB` | Nao | `jobscouter` | Nome do banco no servico db |
 | `POSTGRES_USER` | Nao | `postgres` | Usuario do banco no servico db |
 | `POSTGRES_PASSWORD` | Sim | - | Senha do banco no servico db (defina valor forte) |
