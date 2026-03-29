@@ -96,10 +96,7 @@ async def run_ingestion(
                 for selected_source in selected_sources:
                     source_stats = IngestionStats()
                     for term_index, term in enumerate(search_terms):
-                        normalized_keyword = term.strip() or None
-                        checkpoint_date = ingestion_service.get_latest_job_date(
-                            selected_source, normalized_keyword
-                        )
+                        checkpoint_date = ingestion_service.get_latest_job_date(selected_source)
                         if checkpoint_date is not None:
                             logger.info(
                                 "[%s][%s] Checkpoint encontrado: %s. Vagas antigas serao ignoradas.",

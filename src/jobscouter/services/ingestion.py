@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from enum import Enum
 
 from sqlalchemy import func
-from sqlmodel import Session, col, select
+from sqlmodel import Session, select
 
 from jobscouter.core.logging import get_logger
 from jobscouter.db.models import Job
@@ -88,16 +88,9 @@ class JobIngestionService:
         )
         return stats
 
-    def get_latest_job_date(self, source: str, keyword: str | None) -> datetime | None:
-        normalized_keyword = self._normalize_keyword(keyword)
+    def get_latest_job_date(self, source: str) -> datetime | None:
         statement = select(func.max(Job.created_at)).where(Job.source == source)
-        if normalized_keyword is None:
-            statement = statement.where(col(Job.search_keyword).is_(None))
-        else:
-            statement = statement.where(Job.search_keyword == normalized_keyword)
-
-        latest = self.session.exec(statement).one()
-        return latest
+        return self.session.exec(statement).one()
 
     def upsert_job(self, payload: JobPayload) -> IngestionResult:
         existing = self._find_existing_job(payload)
@@ -107,6 +100,13 @@ class JobIngestionService:
             return IngestionResult.INSERTED
 
         changed = False
+
+        normalized_keyword = self._normalize_keyword(payload.search_keyword)
+        current_keywords = list(existing.search_keywords or [])
+        if normalized_keyword and normalized_keyword not in current_keywords:
+            existing.search_keywords = [*current_keywords, normalized_keyword]
+            changed = True
+
         for field in [
             "title",
             "company",
@@ -132,36 +132,28 @@ class JobIngestionService:
         return IngestionResult.SKIPPED
 
     def _find_existing_job(self, payload: JobPayload) -> Job | None:
-        normalized_keyword = self._normalize_keyword(payload.search_keyword)
         if payload.external_id:
             statement = select(Job).where(
                 Job.source == payload.source,
                 Job.external_id == payload.external_id,
             )
-            if normalized_keyword is None:
-                statement = statement.where(col(Job.search_keyword).is_(None))
-            else:
-                statement = statement.where(Job.search_keyword == normalized_keyword)
             job = self.session.exec(statement).first()
             if job is not None:
                 return job
 
         statement = select(Job).where(Job.source == payload.source, Job.url == payload.url)
-        if normalized_keyword is None:
-            statement = statement.where(col(Job.search_keyword).is_(None))
-        else:
-            statement = statement.where(Job.search_keyword == normalized_keyword)
         return self.session.exec(statement).first()
 
     def _build_model(self, payload: JobPayload) -> Job:
         now = datetime.now(UTC)
+        normalized_keyword = self._normalize_keyword(payload.search_keyword)
         return Job(
             external_id=payload.external_id,
             title=payload.title,
             company=payload.company,
             url=payload.url,
             source=payload.source,
-            search_keyword=self._normalize_keyword(payload.search_keyword),
+            search_keywords=[normalized_keyword] if normalized_keyword else [],
             description_raw=payload.description_raw,
             location=payload.location,
             salary=payload.salary,
