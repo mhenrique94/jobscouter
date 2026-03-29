@@ -13,7 +13,6 @@ load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    app_env: str
     database_url: str
     log_level: str
     request_timeout: float
@@ -24,6 +23,7 @@ class Settings:
     gemini_api_key: str
     gemini_model: str
     gemini_retry_delay_seconds: float
+    app_env: str = "development"
 
     @property
     def is_production(self) -> bool:
