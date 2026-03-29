@@ -48,12 +48,12 @@ def test_get_latest_job_date_returns_none_when_no_rows() -> None:
 
     with Session(engine) as session:
         service = JobIngestionService(session)
-        latest = service.get_latest_job_date("remoteok", "python")
+        latest = service.get_latest_job_date("remoteok")
 
     assert latest is None
 
 
-def test_get_latest_job_date_filters_by_keyword() -> None:
+def test_get_latest_job_date_returns_latest_across_all_keywords() -> None:
     engine = create_engine("sqlite://")
     SQLModel.metadata.create_all(engine)
 
@@ -100,10 +100,10 @@ def test_get_latest_job_date_filters_by_keyword() -> None:
 
     with Session(engine) as session:
         service = JobIngestionService(session)
-        latest_python = service.get_latest_job_date("remoteok", "python")
+        latest = service.get_latest_job_date("remoteok")
 
-    assert latest_python is not None
-    assert latest_python.replace(tzinfo=UTC) == newer_python
+    assert latest is not None
+    assert latest.replace(tzinfo=UTC) == newer_django
 
 
 def test_ingest_jobs_skips_classification_when_outcome_skipped() -> None:
