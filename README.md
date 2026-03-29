@@ -104,7 +104,8 @@ Variaveis essenciais:
 | `NEXT_PUBLIC_API_BASE_URL` | Nao | vazio | URL do backend para rewrite no modo local sem NGINX |
 
 Observacao: para ambiente de producao, defina `APP_ENV=production` para desabilitar publicamente os endpoints de documentacao da API (`/docs`, `/openapi.json` e `/redoc`).
-Observacao: variaveis `NEXT_PUBLIC_*` sao build-time no Next.js; alterar `NEXT_PUBLIC_API_BASE_PATH` ou `NEXT_PUBLIC_API_BASE_URL` exige rebuild da imagem frontend (`docker compose up -d --build`).
+Observacao: no build do backend via Compose, `APP_ENV=production` instala o pacote em modo nao-editavel; em outros ambientes, usa install editavel para favorecer hot reload de desenvolvimento.
+Observacao: para frontend em modo dev no container (`next dev`), alterar `NEXT_PUBLIC_*` exige reiniciar o container frontend para recarregar o ambiente. Em fluxo de build/producao (`next build`), essas variaveis sao build-time e exigem rebuild da imagem.
 
 ## Legado Funcional (Power User)
 
