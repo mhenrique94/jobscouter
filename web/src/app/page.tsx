@@ -34,12 +34,63 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getJobs, syncAnalyze, syncIngest, type Job } from "@/lib/api";
+import { getJobs, syncAnalyze, syncIngest, type Job, type JobsFilters } from "@/lib/api";
 
 type ViewMode = "table" | "cards";
 type PageToken = number | "ellipsis-left" | "ellipsis-right";
+type DashboardTabKey = "ready" | "analyze" | "adjust" | "review" | "discarded" | "all";
+
+type DashboardTabDefinition = {
+  key: DashboardTabKey;
+  label: string;
+  summary: string;
+  filters: JobsFilters;
+};
 
 const DEFAULT_PAGE_SIZE = 50;
+const DEFAULT_TAB_KEY: DashboardTabKey = "ready";
+const DASHBOARD_TABS: DashboardTabDefinition[] = [
+  {
+    key: "ready",
+    label: "Prontas",
+    summary: "Vagas analisadas com score 7-10 para decisao imediata.",
+    filters: { status: ["analyzed"], min_score: 7 },
+  },
+  {
+    key: "analyze",
+    label: "Analisar",
+    summary: "Vagas prontas para rodar a analise de IA.",
+    filters: { status: ["ready_for_ai"] },
+  },
+  {
+    key: "adjust",
+    label: "Ajustar IA",
+    summary: "Vagas analisadas com score 0-6 para recalibrar os criterios da IA.",
+    filters: { status: ["analyzed"], max_score: 6 },
+  },
+  {
+    key: "review",
+    label: "Revisar",
+    summary: "Vagas pendentes para revisar keywords e contexto de filtro.",
+    filters: { status: ["pending"] },
+  },
+  {
+    key: "discarded",
+    label: "Descartadas",
+    summary: "Vagas descartadas para auditoria pontual do funil.",
+    filters: { status: ["discarded"] },
+  },
+  {
+    key: "all",
+    label: "Todas",
+    summary: "Visao geral sem filtro de score, ocultando descartadas por padrao.",
+    filters: { exclude_status: ["discarded"] },
+  },
+];
+const DASHBOARD_TAB_KEYS = new Set<DashboardTabKey>(DASHBOARD_TABS.map((tab) => tab.key));
+
+const getTabDefinition = (tabKey: DashboardTabKey) =>
+  DASHBOARD_TABS.find((tab) => tab.key === tabKey) ?? DASHBOARD_TABS[0];
 
 const buildPaginationItems = (page: number, totalPages: number): PageToken[] => {
   if (totalPages <= 7) {
@@ -108,6 +159,15 @@ function HomeContent() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const tabFromUrl = searchParams.get("tab");
+  const currentTabKey = useMemo<DashboardTabKey>(() => {
+    if (tabFromUrl && DASHBOARD_TAB_KEYS.has(tabFromUrl as DashboardTabKey)) {
+      return tabFromUrl as DashboardTabKey;
+    }
+
+    return DEFAULT_TAB_KEY;
+  }, [tabFromUrl]);
+  const currentTab = useMemo(() => getTabDefinition(currentTabKey), [currentTabKey]);
 
   const pageFromUrl = searchParams.get("page");
   const currentPage = useMemo(() => {
@@ -133,6 +193,7 @@ function HomeContent() {
   const [error, setError] = useState<string | null>(null);
   const [ingesting, setIngesting] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [tabTotals, setTabTotals] = useState<Partial<Record<DashboardTabKey, number>>>({});
   const requestIdRef = useRef(0);
 
   const totalPages = useMemo(
@@ -155,8 +216,14 @@ function HomeContent() {
     return { start, end };
   }, [currentPage, pageSize, totalJobs]);
 
-  const buildPageHref = (nextPage: number) => {
+  const buildDashboardHref = (tabKey: DashboardTabKey, nextPage = 1) => {
     const params = new URLSearchParams(searchParams.toString());
+    if (tabKey === DEFAULT_TAB_KEY) {
+      params.delete("tab");
+    } else {
+      params.set("tab", tabKey);
+    }
+
     if (nextPage <= 1) {
       params.delete("page");
     } else {
@@ -172,7 +239,15 @@ function HomeContent() {
     if (safePage === currentPage) {
       return;
     }
-    router.push(buildPageHref(safePage));
+    router.push(buildDashboardHref(currentTabKey, safePage));
+  };
+
+  const selectTab = (tabKey: DashboardTabKey) => {
+    if (tabKey === currentTabKey) {
+      return;
+    }
+
+    router.push(buildDashboardHref(tabKey, 1));
   };
 
   const openJobDetails = (job: Job) => {
@@ -180,12 +255,23 @@ function HomeContent() {
     setDrawerOpen(true);
   };
 
-  const loadJobs = useCallback(async (page: number) => {
+  const updateTabTotal = useCallback((tabKey: DashboardTabKey, total: number) => {
+    setTabTotals((currentTotals) => {
+      if (currentTotals[tabKey] === total) {
+        return currentTotals;
+      }
+
+      return { ...currentTotals, [tabKey]: total };
+    });
+  }, []);
+
+  const loadJobs = useCallback(async (page: number, tabKey: DashboardTabKey) => {
     const requestId = ++requestIdRef.current;
+    const selectedTab = getTabDefinition(tabKey);
     try {
       setLoading(true);
       setError(null);
-      const data = await getJobs(page, DEFAULT_PAGE_SIZE);
+      const data = await getJobs({ ...selectedTab.filters, page, size: DEFAULT_PAGE_SIZE });
       if (requestId !== requestIdRef.current) {
         return;
       }
@@ -193,6 +279,7 @@ function HomeContent() {
       setJobs(data.items);
       setTotalJobs(data.total);
       setPageSize(data.size);
+      updateTabTotal(tabKey, data.total);
     } catch (requestError) {
       if (requestId !== requestIdRef.current) {
         return;
@@ -204,18 +291,40 @@ function HomeContent() {
         setLoading(false);
       }
     }
-  }, []);
+  }, [updateTabTotal]);
+
+  const loadTabTotal = useCallback(
+    async (tabKey: DashboardTabKey) => {
+      if (tabTotals[tabKey] !== undefined) {
+        return;
+      }
+
+      const tab = getTabDefinition(tabKey);
+      try {
+        const data = await getJobs({ ...tab.filters, page: 1, size: 1 });
+        updateTabTotal(tabKey, data.total);
+      } catch {
+        // Mantem a aba sem contador se a consulta falhar.
+      }
+    },
+    [tabTotals, updateTabTotal]
+  );
 
   useEffect(() => {
-    void loadJobs(currentPage);
-  }, [currentPage, loadJobs]);
+    void loadJobs(currentPage, currentTabKey);
+  }, [currentPage, currentTabKey, loadJobs]);
+
+  useEffect(() => {
+    void loadTabTotal(currentTabKey);
+  }, [currentTabKey, loadTabTotal]);
 
   const onSyncIngest = async () => {
     try {
       setIngesting(true);
       const response = await syncIngest();
       toast.success(response.detail || "Ingestao aceita em background.");
-      await loadJobs(currentPage);
+      setTabTotals({});
+      await loadJobs(currentPage, currentTabKey);
     } catch (requestError) {
       toast.error(getRequestErrorMessage(requestError, "Falha ao iniciar sincronizacao de vagas."));
     } finally {
@@ -228,7 +337,8 @@ function HomeContent() {
       setAnalyzing(true);
       const response = await syncAnalyze();
       toast.success(response.detail || "Analise IA aceita em background.");
-      await loadJobs(currentPage);
+      setTabTotals({});
+      await loadJobs(currentPage, currentTabKey);
     } catch (requestError) {
       toast.error(getRequestErrorMessage(requestError, "Falha ao iniciar analise IA."));
     } finally {
@@ -237,21 +347,9 @@ function HomeContent() {
   };
 
   const onJobUpdated = (updatedJob: Job) => {
-    setJobs((currentJobs) =>
-      currentJobs.map((job) => {
-        if (job.id === updatedJob.id) {
-          return updatedJob;
-        }
-        return job;
-      })
-    );
-
-    setSelectedJob((currentJob) => {
-      if (!currentJob || currentJob.id !== updatedJob.id) {
-        return currentJob;
-      }
-      return updatedJob;
-    });
+    setSelectedJob(updatedJob);
+    setTabTotals({});
+    void loadJobs(currentPage, currentTabKey);
   };
 
   const jobsCount = useMemo(() => totalJobs, [totalJobs]);
@@ -259,12 +357,34 @@ function HomeContent() {
   const showTableView = !error && viewMode === "table" && (jobs.length > 0 || totalJobs > 0 || loading);
   const showCardsView = !loading && !error && jobs.length > 0 && viewMode === "cards";
 
+  const tabCountLabel = useCallback(
+    (tabKey: DashboardTabKey) => {
+      if (tabKey === currentTabKey) {
+        if (loading && tabTotals[tabKey] === undefined) {
+          return "...";
+        }
+
+        return String(totalJobs);
+      }
+
+      const cachedTotal = tabTotals[tabKey];
+      return cachedTotal === undefined ? "..." : String(cachedTotal);
+    },
+    [currentTabKey, loading, tabTotals, totalJobs]
+  );
+
   useEffect(() => {
     if (loading || totalJobs === 0 || currentPage <= totalPages) {
       return;
     }
 
     const params = new URLSearchParams(searchParams.toString());
+    if (currentTabKey === DEFAULT_TAB_KEY) {
+      params.delete("tab");
+    } else {
+      params.set("tab", currentTabKey);
+    }
+
     if (totalPages <= 1) {
       params.delete("page");
     } else {
@@ -273,7 +393,7 @@ function HomeContent() {
 
     const queryString = params.toString();
     router.replace(queryString ? `${pathname}?${queryString}` : pathname);
-  }, [currentPage, loading, pathname, router, searchParams, totalJobs, totalPages]);
+  }, [currentPage, currentTabKey, loading, pathname, router, searchParams, totalJobs, totalPages]);
 
   return (
     <main className="relative min-h-screen bg-background px-6 py-10 md:px-10">
@@ -285,7 +405,7 @@ function HomeContent() {
               <div>
                 <CardTitle className="text-xl md:text-2xl">JobScouter Dashboard</CardTitle>
                 <CardDescription>
-                  Vagas coletadas no backend FastAPI. Total listado: {jobsCount}
+                  {currentTab.summary} Total na aba: {jobsCount}
                 </CardDescription>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -296,7 +416,7 @@ function HomeContent() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => void loadJobs(currentPage)}
+                  onClick={() => void loadJobs(currentPage, currentTabKey)}
                   disabled={loading}
                 >
                   <RefreshCcw className={loading ? "animate-spin" : ""} />
@@ -311,6 +431,21 @@ function HomeContent() {
                   Rodar Analise IA
                 </Button>
               </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {DASHBOARD_TABS.map((tab) => (
+                <Button
+                  key={tab.key}
+                  variant={tab.key === currentTabKey ? "default" : "outline"}
+                  onClick={() => selectTab(tab.key)}
+                  onMouseEnter={() => void loadTabTotal(tab.key)}
+                  onFocus={() => void loadTabTotal(tab.key)}
+                  type="button"
+                >
+                  {tab.label} ({tabCountLabel(tab.key)})
+                </Button>
+              ))}
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -404,7 +539,7 @@ function HomeContent() {
 
               <div className="mt-6 flex flex-col items-center gap-3 border-t border-border/60 pt-4">
                 <div className="text-sm text-muted-foreground">
-                  Mostrando {jobsRange.start}-{jobsRange.end} de {totalJobs} vagas.
+                  Mostrando {jobsRange.start}-{jobsRange.end} de {totalJobs} vagas em {currentTab.label}.
                   {loading ? (
                     <span className="ml-2 inline-flex items-center gap-1">
                       <Loader2 className="size-4 animate-spin" />
@@ -417,7 +552,7 @@ function HomeContent() {
                   <PaginationContent>
                     <PaginationItem>
                       <PaginationPrevious
-                        href={buildPageHref(currentPage - 1)}
+                        href={buildDashboardHref(currentTabKey, currentPage - 1)}
                         className={currentPage <= 1 ? "pointer-events-none opacity-50" : undefined}
                         onClick={(event) => {
                           event.preventDefault();
@@ -438,7 +573,7 @@ function HomeContent() {
                       return (
                         <PaginationItem key={item}>
                           <PaginationLink
-                            href={buildPageHref(item)}
+                            href={buildDashboardHref(currentTabKey, item)}
                             isActive={item === currentPage}
                             onClick={(event) => {
                               event.preventDefault();
@@ -453,7 +588,7 @@ function HomeContent() {
 
                     <PaginationItem>
                       <PaginationNext
-                        href={buildPageHref(currentPage + 1)}
+                        href={buildDashboardHref(currentTabKey, currentPage + 1)}
                         className={
                           currentPage >= totalPages ? "pointer-events-none opacity-50" : undefined
                         }

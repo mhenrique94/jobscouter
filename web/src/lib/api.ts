@@ -3,6 +3,15 @@ import axios from "axios";
 export type JobStatus = "pending" | "ready_for_ai" | "discarded" | "analyzed";
 export type SyncSource = "all" | "remoteok" | "remotar";
 
+export interface JobsFilters {
+  status?: JobStatus[];
+  exclude_status?: JobStatus[];
+  min_score?: number;
+  max_score?: number;
+  page?: number;
+  size?: number;
+}
+
 export interface Job {
   id: number;
   title: string;
@@ -49,9 +58,34 @@ export const api = axios.create({
   timeout: API_TIMEOUT_MS,
 });
 
-export async function getJobs(page = 1, size = 50): Promise<PaginatedJobsResponse> {
+const buildJobsSearchParams = (filters: JobsFilters = {}) => {
+  const params = new URLSearchParams();
+
+  for (const status of filters.status ?? []) {
+    params.append("status", status);
+  }
+
+  for (const status of filters.exclude_status ?? []) {
+    params.append("exclude_status", status);
+  }
+
+  if (filters.min_score !== undefined) {
+    params.set("min_score", String(filters.min_score));
+  }
+
+  if (filters.max_score !== undefined) {
+    params.set("max_score", String(filters.max_score));
+  }
+
+  params.set("page", String(filters.page ?? 1));
+  params.set("size", String(filters.size ?? 50));
+
+  return params;
+};
+
+export async function getJobs(filters: JobsFilters = {}): Promise<PaginatedJobsResponse> {
   const response = await api.get<JobsApiResponse>("/jobs", {
-    params: { page, size },
+    params: buildJobsSearchParams(filters),
   });
 
   if (Array.isArray(response.data)) {
@@ -60,7 +94,7 @@ export async function getJobs(page = 1, size = 50): Promise<PaginatedJobsRespons
       items,
       total: items.length,
       page: 1,
-      size: items.length || size,
+      size: items.length || filters.size || 50,
     };
   }
 
