@@ -12,6 +12,22 @@ import json
 import sqlalchemy as sa
 from alembic import op
 
+# Statements com parâmetros tipados para que o SQLAlchemy serialize JSON corretamente
+# independente do dialect (PostgreSQL/SQLite).
+_SET_KEYWORDS = sa.text("UPDATE jobs SET search_keywords = :kw WHERE id = :id").bindparams(
+    sa.bindparam("kw", type_=sa.JSON())
+)
+_APPLY_MERGE = sa.text("""
+    UPDATE jobs SET
+        search_keywords = :kw,
+        status          = :status,
+        filter_reason   = :filter_reason,
+        ai_score        = :ai_score,
+        ai_summary      = :ai_summary,
+        ai_analysis_at  = :ai_analysis_at
+    WHERE id = :id
+""").bindparams(sa.bindparam("kw", type_=sa.JSON()))
+
 revision = "0005_deduplicate_jobs"
 down_revision = "0004_add_filter_config"
 branch_labels = None
@@ -44,18 +60,9 @@ def _merge_keywords(group: list) -> list[str]:
 def _apply_merge(conn: object, keep_id: int, best: object, merged_keywords: list[str]) -> None:
     """Atualiza o registro mantido com os campos de IA do melhor registro e os keywords mesclados."""
     conn.execute(
-        sa.text("""
-            UPDATE jobs SET
-                search_keywords  = :kw,
-                status           = :status,
-                filter_reason    = :filter_reason,
-                ai_score         = :ai_score,
-                ai_summary       = :ai_summary,
-                ai_analysis_at   = :ai_analysis_at
-            WHERE id = :id
-        """),
+        _APPLY_MERGE,
         {
-            "kw": json.dumps(merged_keywords),
+            "kw": merged_keywords,
             "status": best.status,
             "filter_reason": best.filter_reason,
             "ai_score": best.ai_score,
@@ -79,10 +86,7 @@ def upgrade() -> None:
     rows = conn.execute(sa.text("SELECT id, search_keyword FROM jobs")).fetchall()
     for row in rows:
         keywords = [row.search_keyword] if row.search_keyword else []
-        conn.execute(
-            sa.text("UPDATE jobs SET search_keywords = :kw WHERE id = :id"),
-            {"kw": json.dumps(keywords), "id": row.id},
-        )
+        conn.execute(_SET_KEYWORDS, {"kw": keywords, "id": row.id})
 
     # 3. Deduplica por (source, external_id)
     dup_groups = conn.execute(
