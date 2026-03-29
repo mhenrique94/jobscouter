@@ -4,7 +4,7 @@ import axios from "axios";
 import Link from "next/link";
 import { Loader2, RefreshCcw, Settings2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { JobDetailDrawer } from "@/components/JobDetailDrawer";
@@ -180,7 +180,7 @@ function HomeContent() {
     setDrawerOpen(true);
   };
 
-  const loadJobs = async (page: number) => {
+  const loadJobs = useCallback(async (page: number) => {
     const requestId = ++requestIdRef.current;
     try {
       setLoading(true);
@@ -204,11 +204,11 @@ function HomeContent() {
         setLoading(false);
       }
     }
-  };
+  }, []);
 
   useEffect(() => {
     void loadJobs(currentPage);
-  }, [currentPage]);
+  }, [currentPage, loadJobs]);
 
   const onSyncIngest = async () => {
     try {

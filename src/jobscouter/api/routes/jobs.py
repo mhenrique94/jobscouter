@@ -56,7 +56,9 @@ def list_jobs(
             col(Job.ai_score) >= min_score
         )
 
-    total_statement = select(func.count()).select_from(statement.subquery())
+    total_statement = statement.with_only_columns(
+        func.count(), maintain_column_froms=True
+    ).order_by(None)
     total = int(session.exec(total_statement).one())
 
     offset = (page - 1) * size
