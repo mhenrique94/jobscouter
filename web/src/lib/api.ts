@@ -15,6 +15,15 @@ export interface Job {
   ai_analysis_at: string | null;
 }
 
+export interface PaginatedJobsResponse {
+  items: Job[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+type JobsApiResponse = PaginatedJobsResponse | Job[];
+
 export interface FilterConfig {
   search_terms: string[];
   include_keywords: string[];
@@ -40,10 +49,20 @@ export const api = axios.create({
   timeout: API_TIMEOUT_MS,
 });
 
-export async function getJobs(limit = 50): Promise<Job[]> {
-  const response = await api.get<Job[]>("/jobs", {
-    params: { limit },
+export async function getJobs(page = 1, size = 50): Promise<PaginatedJobsResponse> {
+  const response = await api.get<JobsApiResponse>("/jobs", {
+    params: { page, size },
   });
+
+  if (Array.isArray(response.data)) {
+    const items = response.data;
+    return {
+      items,
+      total: items.length,
+      page: 1,
+      size: items.length || size,
+    };
+  }
 
   return response.data;
 }
