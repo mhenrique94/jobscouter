@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-const backendUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+const backendUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, "");
 const isDev = process.env.NODE_ENV !== "production";
 
 const nextConfig: NextConfig = {
