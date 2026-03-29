@@ -102,8 +102,9 @@ class JobIngestionService:
         changed = False
 
         normalized_keyword = self._normalize_keyword(payload.search_keyword)
-        if normalized_keyword and normalized_keyword not in existing.search_keywords:
-            existing.search_keywords = [*existing.search_keywords, normalized_keyword]
+        current_keywords = list(existing.search_keywords or [])
+        if normalized_keyword and normalized_keyword not in current_keywords:
+            existing.search_keywords = [*current_keywords, normalized_keyword]
             changed = True
 
         for field in [

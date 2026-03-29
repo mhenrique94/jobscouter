@@ -44,7 +44,7 @@ async def _run_ingest_sync(source: str, limit: int) -> None:
                 with Session(engine) as session:
                     service = JobIngestionService(session=session)
                     try:
-                        checkpoint_date = service.get_latest_job_date(selected_source, None)
+                        checkpoint_date = service.get_latest_job_date(selected_source)
                         jobs = await scrapers[selected_source].fetch_jobs(
                             limit=limit,
                             max_pages=None,

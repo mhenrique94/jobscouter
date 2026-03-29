@@ -69,8 +69,11 @@ def _apply_merge(conn: object, keep_id: int, best: object, merged_keywords: list
 def upgrade() -> None:
     conn = op.get_bind()
 
-    # 1. Adiciona search_keywords como nullable (SQLite não permite NOT NULL sem default em ALTER)
-    op.add_column("jobs", sa.Column("search_keywords", sa.JSON(), nullable=True))
+    # 1. Adiciona search_keywords com server_default para garantir NOT NULL após backfill
+    op.add_column(
+        "jobs",
+        sa.Column("search_keywords", sa.JSON(), nullable=False, server_default="[]"),
+    )
 
     # 2. Popula search_keywords a partir do search_keyword existente
     rows = conn.execute(sa.text("SELECT id, search_keyword FROM jobs")).fetchall()
@@ -165,7 +168,7 @@ def downgrade() -> None:
     conn = op.get_bind()
     rows = conn.execute(sa.text("SELECT id, search_keywords FROM jobs")).fetchall()
     for row in rows:
-        keywords = json.loads(row.search_keywords or "[]")
+        keywords = _parse_keywords(row.search_keywords)
         keyword = keywords[0] if keywords else None
         conn.execute(
             sa.text("UPDATE jobs SET search_keyword = :kw WHERE id = :id"),

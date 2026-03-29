@@ -106,6 +106,36 @@ def test_get_latest_job_date_returns_latest_across_all_keywords() -> None:
     assert latest.replace(tzinfo=UTC) == newer_django
 
 
+def test_upsert_merges_search_keywords_for_same_job() -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    base = dict(
+        external_id="job-1",
+        title="Backend Engineer",
+        company="Acme",
+        url="https://example.com/jobs/1",
+        source="remoteok",
+        created_at=datetime.now(UTC),
+    )
+
+    with Session(engine) as session:
+        service = JobIngestionService(session)
+        first = service.upsert_job(JobPayload(**base, search_keyword="python"))
+        second = service.upsert_job(JobPayload(**base, search_keyword="django"))
+        third = service.upsert_job(JobPayload(**base, search_keyword="python"))  # duplicado
+        session.commit()
+
+    assert first == IngestionResult.INSERTED
+    assert second == IngestionResult.UPDATED
+    assert third == IngestionResult.SKIPPED
+
+    with Session(engine) as session:
+        rows = session.exec(select(Job)).all()
+        assert len(rows) == 1
+        assert set(rows[0].search_keywords) == {"python", "django"}
+
+
 def test_ingest_jobs_skips_classification_when_outcome_skipped() -> None:
     engine = create_engine("sqlite://")
     SQLModel.metadata.create_all(engine)
