@@ -25,7 +25,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        EDITABLE: ${BACKEND_EDITABLE:-false}
+        APP_ENV: ${APP_ENV:-development}
     env_file:
       - .env
     environment:

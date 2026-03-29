@@ -97,7 +97,6 @@ Variaveis essenciais:
 | `GEMINI_MODEL` | Nao | `gemini-1.5-flash-latest` | Modelo preferencial |
 | `GEMINI_RETRY_DELAY_SECONDS` | Nao | `1.5` | Retry em rate limit |
 | `DATABASE_URL_DOCKER` | Nao | `postgresql+psycopg://postgres:postgres@db:5432/jobscouter` | URL do banco usada no servico backend do Compose |
-| `BACKEND_EDITABLE` | Nao | `false` | Controla install editavel no build do backend (`true` para hot reload com bind mount; `false` para imagem mais proxima de producao) |
 | `POSTGRES_DB` | Nao | `jobscouter` | Nome do banco no servico db |
 | `POSTGRES_USER` | Nao | `postgres` | Usuario do banco no servico db |
 | `POSTGRES_PASSWORD` | Sim | - | Senha do banco no servico db (defina valor forte) |
@@ -105,6 +104,7 @@ Variaveis essenciais:
 | `NEXT_PUBLIC_API_BASE_URL` | Nao | vazio | URL do backend para rewrite no modo local sem NGINX |
 
 Observacao: para ambiente de producao, defina `APP_ENV=production` para desabilitar publicamente os endpoints de documentacao da API (`/docs`, `/openapi.json` e `/redoc`).
+Observacao: no build do backend via Compose, `APP_ENV=production` instala o pacote em modo nao-editavel; em outros ambientes, usa install editavel para favorecer hot reload de desenvolvimento.
 Observacao: variaveis `NEXT_PUBLIC_*` sao build-time no Next.js; alterar `NEXT_PUBLIC_API_BASE_PATH` ou `NEXT_PUBLIC_API_BASE_URL` exige rebuild da imagem frontend (`docker compose up -d --build`).
 
 ## Legado Funcional (Power User)
