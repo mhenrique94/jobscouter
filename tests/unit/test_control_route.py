@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import dataclasses
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -9,10 +9,28 @@ from sqlmodel import Session, SQLModel, create_engine
 
 import jobscouter.api.routes.control as control_route
 from jobscouter.api.deps import get_session
+from jobscouter.core.config import Settings
 from jobscouter.db.models import Job, JobStatus
 
+_BASE_SETTINGS = Settings(
+    database_url="sqlite://",
+    log_level="INFO",
+    request_timeout=10.0,
+    remoteok_api_url="https://remoteok.com/api",
+    remotar_base_url="https://remotar.com.br",
+    remotar_api_url="https://api.remotar.com.br",
+    user_agent="test-bot/0.1",
+    gemini_api_key="fake-key",
+    gemini_model="models/gemini-2.5-flash-lite",
+    gemini_retry_delay_seconds=1.0,
+    app_env="development",
+)
 
-@dataclass
+
+_PROD_SETTINGS = dataclasses.replace(_BASE_SETTINGS, app_env="production")
+
+
+@dataclasses.dataclass
 class _FakeAnalysisResult:
     score: int
     summary: str
@@ -52,6 +70,41 @@ def _seed_job(engine, *, status: JobStatus = JobStatus.ready_for_ai) -> Job:
         session.commit()
         session.refresh(job)
         return job
+
+
+def test_get_logs_returns_403_in_production(monkeypatch) -> None:
+    monkeypatch.setattr(control_route, "get_settings", lambda: _PROD_SETTINGS)
+    app = FastAPI()
+    app.include_router(control_route.router, prefix="/api/v1/control")
+    client = TestClient(app)
+
+    response = client.get("/api/v1/control/logs")
+
+    assert response.status_code == 403
+    assert "producao" in response.json()["detail"]
+
+
+def test_get_logs_redacts_sensitive_data(monkeypatch) -> None:
+    monkeypatch.setattr(control_route, "get_settings", lambda: _BASE_SETTINGS)
+    sensitive_lines = [
+        "postgresql+psycopg://user:s3cr3t@localhost/db",
+        "gemini_api_key=AIzaSyABC123xyz",
+        "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.token",
+    ]
+    monkeypatch.setattr(control_route, "read_log_lines", lambda n: sensitive_lines)
+
+    app = FastAPI()
+    app.include_router(control_route.router, prefix="/api/v1/control")
+    client = TestClient(app)
+
+    response = client.get("/api/v1/control/logs")
+
+    assert response.status_code == 200
+    body = "\n".join(response.json()["lines"])
+    assert "s3cr3t" not in body
+    assert "AIzaSyABC123xyz" not in body
+    assert "eyJhbGciOiJIUzI1NiJ9.token" not in body
+    assert "***" in body
 
 
 def test_analyze_job_returns_updated_job(monkeypatch) -> None:
