@@ -22,6 +22,7 @@ export interface Job {
   ai_score: number | null;
   ai_summary: string | null;
   ai_analysis_at: string | null;
+  created_at: string;
 }
 
 export interface PaginatedJobsResponse {
@@ -47,6 +48,10 @@ export interface FilterConfigPatchPayload {
 
 export interface BackgroundTaskAccepted {
   detail: string;
+}
+
+export interface LogsResponse {
+  lines: string[];
 }
 
 const API_TIMEOUT_MS = 10_000;
@@ -122,6 +127,11 @@ export async function syncAnalyze(limit?: number): Promise<BackgroundTaskAccepte
   const response = await api.post<BackgroundTaskAccepted>("/control/sync/analyze", null, {
     params: limit === undefined ? undefined : { limit },
   });
+  return response.data;
+}
+
+export async function getLogs(lines = 200): Promise<LogsResponse> {
+  const response = await api.get<LogsResponse>("/control/logs", { params: { lines } });
   return response.data;
 }
 

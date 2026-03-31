@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
+from sqlalchemy import select as sa_select
 from sqlmodel import Session, col, select
 
 from jobscouter.api.deps import get_session
@@ -104,10 +105,7 @@ def list_jobs(
     if max_score is not None:
         statement = statement.where(col(Job.ai_score) <= max_score)
 
-    total_statement = statement.with_only_columns(
-        func.count(), maintain_column_froms=True
-    ).order_by(None)
-    total = int(session.exec(total_statement).one())
+    total = session.scalar(sa_select(func.count()).select_from(statement.subquery())) or 0
 
     offset = (page - 1) * size
     items_statement = (
