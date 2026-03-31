@@ -2,7 +2,7 @@
 
 import axios from "axios";
 import Link from "next/link";
-import { Loader2, RefreshCcw, Settings2 } from "lucide-react";
+import { Loader2, RefreshCcw, ScrollText, Settings2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -10,6 +10,14 @@ import { toast } from "sonner";
 import { JobDetailDrawer } from "@/components/JobDetailDrawer";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import {
   Card,
   CardContent,
@@ -34,7 +42,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getJobs, syncAnalyze, syncIngest, type Job, type JobsFilters } from "@/lib/api";
+import { getJobs, getLogs, syncAnalyze, syncIngest, type Job, type JobsFilters } from "@/lib/api";
 
 type ViewMode = "table" | "cards";
 type PageToken = number | "ellipsis-left" | "ellipsis-right";
@@ -48,24 +56,32 @@ type DashboardTabDefinition = {
 };
 
 const DEFAULT_PAGE_SIZE = 50;
+
+function formatDate(dateStr: string) {
+  return new Date(dateStr).toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  });
+}
 const DEFAULT_TAB_KEY: DashboardTabKey = "ready";
 const DASHBOARD_TABS: DashboardTabDefinition[] = [
   {
     key: "ready",
     label: "Prontas",
-    summary: "Vagas analisadas com score 7-10 para decisao imediata.",
+    summary: "Vagas analisadas com score 7-10 para decisão imediata.",
     filters: { status: ["analyzed"], min_score: 7 },
   },
   {
     key: "analyze",
     label: "Analisar",
-    summary: "Vagas prontas para rodar a analise de IA.",
+    summary: "Vagas prontas para rodar a análise de IA.",
     filters: { status: ["ready_for_ai"] },
   },
   {
     key: "adjust",
     label: "Ajustar IA",
-    summary: "Vagas analisadas com score 0-6 para recalibrar os criterios da IA.",
+    summary: "Vagas analisadas com score 0-6 para recalibrar os critérios da IA.",
     filters: { status: ["analyzed"], max_score: 6 },
   },
   {
@@ -83,7 +99,7 @@ const DASHBOARD_TABS: DashboardTabDefinition[] = [
   {
     key: "all",
     label: "Todas",
-    summary: "Visao geral sem filtro de score, ocultando descartadas por padrao.",
+    summary: "Visão geral sem filtro de score, ocultando descartadas por padrão.",
     filters: { exclude_status: ["discarded"] },
   },
 ];
@@ -193,6 +209,9 @@ function HomeContent() {
   const [error, setError] = useState<string | null>(null);
   const [ingesting, setIngesting] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [logLines, setLogLines] = useState<string[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
   const [tabTotals, setTabTotals] = useState<Partial<Record<DashboardTabKey, number>>>({});
   const requestIdRef = useRef(0);
 
@@ -285,7 +304,7 @@ function HomeContent() {
         return;
       }
 
-      setError(getRequestErrorMessage(requestError, "Nao foi possivel carregar as vagas do backend."));
+      setError(getRequestErrorMessage(requestError, "Não foi possível carregar as vagas do backend."));
     } finally {
       if (requestId === requestIdRef.current) {
         setLoading(false);
@@ -322,11 +341,11 @@ function HomeContent() {
     try {
       setIngesting(true);
       const response = await syncIngest();
-      toast.success(response.detail || "Ingestao aceita em background.");
+      toast.success(response.detail || "Ingestão aceita em background.");
       setTabTotals({});
       await loadJobs(currentPage, currentTabKey);
     } catch (requestError) {
-      toast.error(getRequestErrorMessage(requestError, "Falha ao iniciar sincronizacao de vagas."));
+      toast.error(getRequestErrorMessage(requestError, "Falha ao iniciar sincronização de vagas."));
     } finally {
       setIngesting(false);
     }
@@ -336,13 +355,26 @@ function HomeContent() {
     try {
       setAnalyzing(true);
       const response = await syncAnalyze();
-      toast.success(response.detail || "Analise IA aceita em background.");
+      toast.success(response.detail || "Análise IA aceita em background.");
       setTabTotals({});
       await loadJobs(currentPage, currentTabKey);
     } catch (requestError) {
-      toast.error(getRequestErrorMessage(requestError, "Falha ao iniciar analise IA."));
+      toast.error(getRequestErrorMessage(requestError, "Falha ao iniciar análise IA."));
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const openLogs = async () => {
+    setLogsOpen(true);
+    setLoadingLogs(true);
+    try {
+      const data = await getLogs(300);
+      setLogLines(data.lines);
+    } catch {
+      setLogLines(["Erro ao carregar logs."]);
+    } finally {
+      setLoadingLogs(false);
     }
   };
 
@@ -411,8 +443,12 @@ function HomeContent() {
               <div className="flex flex-wrap items-center gap-2">
                 <Link href="/settings" className={buttonVariants({ variant: "outline" })}>
                   <Settings2 />
-                  Configuracoes
+                  Configurações
                 </Link>
+                <Button type="button" variant="outline" onClick={() => void openLogs()}>
+                  <ScrollText />
+                  Ver Logs
+                </Button>
                 <Button
                   type="button"
                   variant="outline"
@@ -499,6 +535,7 @@ function HomeContent() {
                     <TableHead>Empresa</TableHead>
                     <TableHead>Score IA</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Inclusão</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -525,12 +562,13 @@ function HomeContent() {
                       <TableCell>
                         <Badge variant={statusVariant(job.status)}>{job.status}</Badge>
                       </TableCell>
+                      <TableCell className="text-muted-foreground">{formatDate(job.created_at)}</TableCell>
                     </TableRow>
                   ))}
                   {!loading && jobs.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
-                        Nenhuma vaga nesta pagina.
+                      <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                        Nenhuma vaga nesta página.
                       </TableCell>
                     </TableRow>
                   ) : null}
@@ -543,7 +581,7 @@ function HomeContent() {
                   {loading ? (
                     <span className="ml-2 inline-flex items-center gap-1">
                       <Loader2 className="size-4 animate-spin" />
-                      Atualizando pagina...
+                      Atualizando página...
                     </span>
                   ) : null}
                 </div>
@@ -606,34 +644,130 @@ function HomeContent() {
         ) : null}
 
         {showCardsView ? (
-          <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {jobs.map((job) => (
-              <Card
-                key={job.id}
-                className="cursor-pointer border border-border/60 transition-all hover:scale-[1.01] hover:shadow-lg"
-                onClick={() => openJobDetails(job)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    openJobDetails(job);
-                  }
-                }}
-                tabIndex={0}
-              >
-                <CardHeader className="gap-2">
-                  <CardTitle className="line-clamp-2 text-base">{job.title}</CardTitle>
-                  <CardDescription>{job.company}</CardDescription>
-                </CardHeader>
-                <CardContent className="flex items-center justify-between gap-3">
-                  <Badge className={scoreStyle(job.ai_score)} variant="outline">
-                    Score: {job.ai_score ?? "N/A"}
-                  </Badge>
-                  <Badge variant={statusVariant(job.status)}>{job.status}</Badge>
-                </CardContent>
-              </Card>
-            ))}
-          </section>
+          <div className="flex flex-col gap-4">
+            <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {jobs.map((job) => (
+                <Card
+                  key={job.id}
+                  className="cursor-pointer border border-border/60 transition-all hover:scale-[1.01] hover:shadow-lg"
+                  onClick={() => openJobDetails(job)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openJobDetails(job);
+                    }
+                  }}
+                  tabIndex={0}
+                >
+                  <CardHeader className="gap-2">
+                    <CardTitle className="line-clamp-2 text-base">{job.title}</CardTitle>
+                    <CardDescription>{job.company}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex items-center justify-between gap-3">
+                    <Badge className={scoreStyle(job.ai_score)} variant="outline">
+                      Score: {job.ai_score ?? "N/A"}
+                    </Badge>
+                    <Badge variant={statusVariant(job.status)}>{job.status}</Badge>
+                    <span className="text-xs text-muted-foreground">{formatDate(job.created_at)}</span>
+                  </CardContent>
+                </Card>
+              ))}
+            </section>
+
+            <div className="flex flex-col items-center gap-3 border-t border-border/60 pt-4">
+              <div className="text-sm text-muted-foreground">
+                Mostrando {jobsRange.start}-{jobsRange.end} de {totalJobs} vagas em {currentTab.label}.
+              </div>
+
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      href={buildDashboardHref(currentTabKey, currentPage - 1)}
+                      className={currentPage <= 1 ? "pointer-events-none opacity-50" : undefined}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        navigateToPage(currentPage - 1);
+                      }}
+                    />
+                  </PaginationItem>
+
+                  {pageItems.map((item) => {
+                    if (item === "ellipsis-left" || item === "ellipsis-right") {
+                      return (
+                        <PaginationItem key={item}>
+                          <PaginationEllipsis />
+                        </PaginationItem>
+                      );
+                    }
+
+                    return (
+                      <PaginationItem key={item}>
+                        <PaginationLink
+                          href={buildDashboardHref(currentTabKey, item)}
+                          isActive={item === currentPage}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            navigateToPage(item);
+                          }}
+                        >
+                          {item}
+                        </PaginationLink>
+                      </PaginationItem>
+                    );
+                  })}
+
+                  <PaginationItem>
+                    <PaginationNext
+                      href={buildDashboardHref(currentTabKey, currentPage + 1)}
+                      className={
+                        currentPage >= totalPages ? "pointer-events-none opacity-50" : undefined
+                      }
+                      onClick={(event) => {
+                        event.preventDefault();
+                        navigateToPage(currentPage + 1);
+                      }}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          </div>
         ) : null}
+
+        <Drawer open={logsOpen} onOpenChange={setLogsOpen} direction="bottom">
+          <DrawerContent className="max-h-[75vh]">
+            <DrawerHeader className="flex items-center justify-between">
+              <DrawerTitle>Logs da aplicação</DrawerTitle>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void openLogs()}
+                disabled={loadingLogs}
+              >
+                {loadingLogs ? <Loader2 className="animate-spin" /> : <RefreshCcw />}
+                Atualizar
+              </Button>
+            </DrawerHeader>
+            <div className="overflow-y-auto px-4 pb-2">
+              {loadingLogs ? (
+                <p className="text-sm text-muted-foreground">Carregando logs...</p>
+              ) : logLines.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhum log disponível ainda.</p>
+              ) : (
+                <pre className="whitespace-pre-wrap break-all font-mono text-xs leading-5 text-foreground">
+                  {logLines.join("\n")}
+                </pre>
+              )}
+            </div>
+            <DrawerFooter>
+              <DrawerClose asChild>
+                <Button variant="outline">Fechar</Button>
+              </DrawerClose>
+            </DrawerFooter>
+          </DrawerContent>
+        </Drawer>
 
         <JobDetailDrawer
           open={drawerOpen}

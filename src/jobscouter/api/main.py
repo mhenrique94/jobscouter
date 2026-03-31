@@ -11,7 +11,7 @@ from jobscouter.api.routes.config import router as config_router
 from jobscouter.api.routes.control import router as control_router
 from jobscouter.api.routes.jobs import router as jobs_router
 from jobscouter.core.config import get_settings
-from jobscouter.core.logging import get_logger
+from jobscouter.core.logging import configure_logging, get_logger
 from jobscouter.db.session import engine
 from jobscouter.services.filter import FilterConfigService
 
@@ -31,6 +31,7 @@ async def lifespan(_app: FastAPI):
 
 
 settings = get_settings()
+configure_logging(settings.log_level)
 docs_enabled = not settings.is_production
 
 app = FastAPI(

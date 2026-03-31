@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 
 from jobscouter.api.deps import get_session
 from jobscouter.core.config import get_settings
-from jobscouter.core.logging import get_logger
+from jobscouter.core.logging import get_logger, read_log_lines
 from jobscouter.db.models import Job, JobStatus
 from jobscouter.db.session import engine
 from jobscouter.scrapers.remotar import RemotarScraper
@@ -115,6 +115,41 @@ async def _run_analyze_sync(limit: int | None) -> None:
         logger.exception("[control.analyze] Falha inesperada na task: %s", exc)
 
 
+_REDACT_PATTERNS = [
+    # URLs com credenciais: postgresql+psycopg://user:senha@host
+    (r"(?i)(postgres(?:ql)?(?:\+\w+)?://[^:]+:)[^@]+(@)", r"\1***\2"),
+    # Chaves de API: key=AIza..., api_key=..., token=...
+    (r"(?i)((?:api[_-]?key|token|secret|password|gemini_api_key)\s*[=:]\s*)\S+", r"\1***"),
+    # Bearer tokens em headers HTTP
+    (r"(?i)(bearer\s+)\S+", r"\1***"),
+]
+
+
+def _redact_line(line: str) -> str:
+    import re
+
+    for pattern, replacement in _REDACT_PATTERNS:
+        line = re.sub(pattern, replacement, line)
+    return line
+
+
+@router.get(
+    "/logs",
+    summary="Retornar ultimas linhas de log",
+    description="Retorna as ultimas N linhas do arquivo de log da aplicacao.",
+)
+def get_logs(
+    lines: int = Query(default=200, ge=1, le=2000, description="Numero de linhas a retornar"),
+) -> dict[str, list[str]]:
+    settings = get_settings()
+    if settings.is_production:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Endpoint de logs indisponivel em producao.",
+        )
+    return {"lines": [_redact_line(line) for line in read_log_lines(lines)]}
+
+
 @router.post(
     "/sync/ingest",
     status_code=status.HTTP_202_ACCEPTED,
@@ -181,7 +216,7 @@ async def analyze_job(
 
     if job.status == JobStatus.discarded:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=422,
             detail="Vagas descartadas nao podem ser analisadas individualmente.",
         )
 
