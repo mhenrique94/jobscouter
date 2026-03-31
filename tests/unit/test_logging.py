@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from jobscouter.api.routes.control import _redact_line
-from jobscouter.core.logging import read_log_lines
+from jobscouter.core.logging import configure_logging, read_log_lines
 
 # ---------------------------------------------------------------------------
 # read_log_lines
@@ -77,6 +77,24 @@ def test_read_log_lines_handles_invalid_bytes(tmp_path: Path) -> None:
 
     assert len(result) == 2
     assert result[0] == "linha valida"
+
+
+# ---------------------------------------------------------------------------
+# configure_logging
+# ---------------------------------------------------------------------------
+
+
+def test_configure_logging_survives_oserror_on_file_handler(tmp_path: Path) -> None:
+    unwritable = tmp_path / "noperm" / "app.log"  # diretório pai não existe → OSError
+    with patch("jobscouter.core.logging.LOG_FILE", str(unwritable)):
+        configure_logging("INFO")  # não deve lançar exceção
+
+    import logging
+
+    root = logging.getLogger()
+    assert any(isinstance(h, logging.StreamHandler) for h in root.handlers), (
+        "stdout/stderr handler deve permanecer ativo"
+    )
 
 
 # ---------------------------------------------------------------------------

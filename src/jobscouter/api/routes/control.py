@@ -216,7 +216,7 @@ async def analyze_job(
 
     if job.status == JobStatus.discarded:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=422,
             detail="Vagas descartadas nao podem ser analisadas individualmente.",
         )
 

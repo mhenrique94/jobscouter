@@ -16,9 +16,16 @@ def configure_logging(level: str) -> None:
         force=True,
     )
 
-    file_handler = RotatingFileHandler(LOG_FILE, maxBytes=1_048_576, backupCount=2)
-    file_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATEFMT))
-    logging.getLogger().addHandler(file_handler)
+    try:
+        file_handler = RotatingFileHandler(
+            LOG_FILE, maxBytes=1_048_576, backupCount=2, encoding="utf-8"
+        )
+        file_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATEFMT))
+        logging.getLogger().addHandler(file_handler)
+    except OSError as exc:
+        logging.warning(
+            "Nao foi possivel criar o handler de arquivo de log (%s): %s", LOG_FILE, exc
+        )
 
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
