@@ -69,19 +69,19 @@ const DASHBOARD_TABS: DashboardTabDefinition[] = [
   {
     key: "ready",
     label: "Prontas",
-    summary: "Vagas analisadas com score 7-10 para decisao imediata.",
+    summary: "Vagas analisadas com score 7-10 para decisão imediata.",
     filters: { status: ["analyzed"], min_score: 7 },
   },
   {
     key: "analyze",
     label: "Analisar",
-    summary: "Vagas prontas para rodar a analise de IA.",
+    summary: "Vagas prontas para rodar a análise de IA.",
     filters: { status: ["ready_for_ai"] },
   },
   {
     key: "adjust",
     label: "Ajustar IA",
-    summary: "Vagas analisadas com score 0-6 para recalibrar os criterios da IA.",
+    summary: "Vagas analisadas com score 0-6 para recalibrar os critérios da IA.",
     filters: { status: ["analyzed"], max_score: 6 },
   },
   {
@@ -99,7 +99,7 @@ const DASHBOARD_TABS: DashboardTabDefinition[] = [
   {
     key: "all",
     label: "Todas",
-    summary: "Visao geral sem filtro de score, ocultando descartadas por padrao.",
+    summary: "Visão geral sem filtro de score, ocultando descartadas por padrão.",
     filters: { exclude_status: ["discarded"] },
   },
 ];
@@ -304,7 +304,7 @@ function HomeContent() {
         return;
       }
 
-      setError(getRequestErrorMessage(requestError, "Nao foi possivel carregar as vagas do backend."));
+      setError(getRequestErrorMessage(requestError, "Não foi possível carregar as vagas do backend."));
     } finally {
       if (requestId === requestIdRef.current) {
         setLoading(false);
@@ -341,11 +341,11 @@ function HomeContent() {
     try {
       setIngesting(true);
       const response = await syncIngest();
-      toast.success(response.detail || "Ingestao aceita em background.");
+      toast.success(response.detail || "Ingestão aceita em background.");
       setTabTotals({});
       await loadJobs(currentPage, currentTabKey);
     } catch (requestError) {
-      toast.error(getRequestErrorMessage(requestError, "Falha ao iniciar sincronizacao de vagas."));
+      toast.error(getRequestErrorMessage(requestError, "Falha ao iniciar sincronização de vagas."));
     } finally {
       setIngesting(false);
     }
@@ -355,11 +355,11 @@ function HomeContent() {
     try {
       setAnalyzing(true);
       const response = await syncAnalyze();
-      toast.success(response.detail || "Analise IA aceita em background.");
+      toast.success(response.detail || "Análise IA aceita em background.");
       setTabTotals({});
       await loadJobs(currentPage, currentTabKey);
     } catch (requestError) {
-      toast.error(getRequestErrorMessage(requestError, "Falha ao iniciar analise IA."));
+      toast.error(getRequestErrorMessage(requestError, "Falha ao iniciar análise IA."));
     } finally {
       setAnalyzing(false);
     }
@@ -443,7 +443,7 @@ function HomeContent() {
               <div className="flex flex-wrap items-center gap-2">
                 <Link href="/settings" className={buttonVariants({ variant: "outline" })}>
                   <Settings2 />
-                  Configuracoes
+                  Configurações
                 </Link>
                 <Button type="button" variant="outline" onClick={() => void openLogs()}>
                   <ScrollText />
@@ -568,7 +568,7 @@ function HomeContent() {
                   {!loading && jobs.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                        Nenhuma vaga nesta pagina.
+                        Nenhuma vaga nesta página.
                       </TableCell>
                     </TableRow>
                   ) : null}
@@ -581,7 +581,7 @@ function HomeContent() {
                   {loading ? (
                     <span className="ml-2 inline-flex items-center gap-1">
                       <Loader2 className="size-4 animate-spin" />
-                      Atualizando pagina...
+                      Atualizando página...
                     </span>
                   ) : null}
                 </div>
@@ -738,7 +738,7 @@ function HomeContent() {
         <Drawer open={logsOpen} onOpenChange={setLogsOpen} direction="bottom">
           <DrawerContent className="max-h-[75vh]">
             <DrawerHeader className="flex items-center justify-between">
-              <DrawerTitle>Logs da aplicacao</DrawerTitle>
+              <DrawerTitle>Logs da aplicação</DrawerTitle>
               <Button
                 type="button"
                 variant="outline"
@@ -754,7 +754,7 @@ function HomeContent() {
               {loadingLogs ? (
                 <p className="text-sm text-muted-foreground">Carregando logs...</p>
               ) : logLines.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nenhum log disponivel ainda.</p>
+                <p className="text-sm text-muted-foreground">Nenhum log disponível ainda.</p>
               ) : (
                 <pre className="whitespace-pre-wrap break-all font-mono text-xs leading-5 text-foreground">
                   {logLines.join("\n")}

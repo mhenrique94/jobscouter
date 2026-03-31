@@ -29,9 +29,12 @@ def get_logger(name: str) -> logging.Logger:
 
 
 def read_log_lines(n: int = 200) -> list[str]:
+    from collections import deque
+
     try:
-        with open(LOG_FILE) as fh:
-            lines = fh.readlines()
-        return [line.rstrip() for line in lines[-n:]]
-    except FileNotFoundError:
+        with open(LOG_FILE, errors="replace") as fh:
+            tail = deque(fh, maxlen=n)
+        return [line.rstrip() for line in tail]
+    except OSError:
+        logging.getLogger(__name__).warning("Nao foi possivel ler o arquivo de log: %s", LOG_FILE)
         return []
