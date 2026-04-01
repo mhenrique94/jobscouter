@@ -1,3 +1,7 @@
+export async function updateJobStatus(jobId: number, status: JobStatus): Promise<Job> {
+  const response = await api.patch<Job>(`/control/jobs/${jobId}/status`, { status });
+  return response.data;
+}
 import axios from "axios";
 
 export type JobStatus = "pending" | "ready_for_ai" | "discarded" | "analyzed";

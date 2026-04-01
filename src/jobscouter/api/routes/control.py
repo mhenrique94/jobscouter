@@ -4,7 +4,8 @@ from datetime import UTC, datetime
 from typing import Literal
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from jobscouter.api.deps import get_session
@@ -18,6 +19,20 @@ from jobscouter.services.analyzer import AIAnalyzerService
 from jobscouter.services.ingestion import IngestionStats, JobIngestionService
 
 router = APIRouter(tags=["control"])
+
+
+class JobStatusUpdatePayload(BaseModel):
+    status: str
+
+
+_REDACT_PATTERNS = [
+    # URLs com credenciais: postgresql+psycopg://user:senha@host
+    (r"(?i)(postgres(?:ql)?(?:\+\w+)?://[^:]+:)[^@]+(@)", r"\1***\2"),
+    # Chaves de API: key=AIza..., api_key=..., token=...
+    (r"(?i)((?:api[_-]?key|token|secret|password|gemini_api_key)\s*[=:]\s*)\S+", r"\1***"),
+    # Bearer tokens em headers HTTP
+    (r"(?i)(bearer\s+)\S+", r"\1***"),
+]
 
 
 async def _run_ingest_sync(source: str, limit: int) -> None:
@@ -115,22 +130,43 @@ async def _run_analyze_sync(limit: int | None) -> None:
         logger.exception("[control.analyze] Falha inesperada na task: %s", exc)
 
 
-_REDACT_PATTERNS = [
-    # URLs com credenciais: postgresql+psycopg://user:senha@host
-    (r"(?i)(postgres(?:ql)?(?:\+\w+)?://[^:]+:)[^@]+(@)", r"\1***\2"),
-    # Chaves de API: key=AIza..., api_key=..., token=...
-    (r"(?i)((?:api[_-]?key|token|secret|password|gemini_api_key)\s*[=:]\s*)\S+", r"\1***"),
-    # Bearer tokens em headers HTTP
-    (r"(?i)(bearer\s+)\S+", r"\1***"),
-]
-
-
 def _redact_line(line: str) -> str:
     import re
 
     for pattern, replacement in _REDACT_PATTERNS:
         line = re.sub(pattern, replacement, line)
     return line
+
+
+# Novo endpoint para atualizar status manualmente
+@router.patch(
+    "/jobs/{job_id}/status",
+    response_model=Job,
+    summary="Atualizar status da vaga manualmente",
+    description=(
+        "Permite ao usuário classificar a vaga como 'ready_for_ai' ou 'discarded' manualmente."
+    ),
+    response_description="Vaga atualizada com novo status.",
+)
+def update_job_status(
+    job_id: int,
+    payload: JobStatusUpdatePayload = Body(...),
+    db: Session = Depends(get_session),
+) -> Job:
+    job = db.get(Job, job_id)
+    if job is None or not payload.status:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vaga nao encontrada.")
+
+    allowed = {JobStatus.ready_for_ai.value, JobStatus.discarded.value}
+    if payload.status not in allowed:
+        raise HTTPException(status_code=422, detail=f"Status permitido: {', '.join(allowed)}")
+
+    job.status = payload.status
+    job.updated_at = datetime.now(UTC)
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
 
 
 @router.get(

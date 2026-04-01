@@ -18,7 +18,7 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import { analyzeJob, type Job } from "@/lib/api";
+import { analyzeJob, updateJobStatus, type Job } from "@/lib/api";
 
 type JobDetailDrawerProps = {
   open: boolean;
@@ -65,7 +65,7 @@ const statusLabel = (status: Job["status"]) => {
 
 const scoreLabel = (score: number | null) => {
   if (score === null) {
-    return "Nao analisado";
+    return "Não analisada";
   }
 
   if (score >= 8) {
@@ -79,15 +79,32 @@ const scoreLabel = (score: number | null) => {
   return "Baixa aderencia";
 };
 
+const statusGuidanceMessage = (status: Job["status"]) => {
+  if (status === "pending") {
+    return "Esta vaga está pendente de classificação. Você pode marcar como válida (pronta para análise com IA) ou descartar.";
+  }
+
+  if (status === "ready_for_ai") {
+    return "Esta vaga já está pronta para análise com IA. Clique em Analisar com IA para continuar.";
+  }
+
+  if (status === "discarded") {
+    return "Esta vaga foi descartada e não pode ser analisada.";
+  }
+
+  return "Esta vaga ainda não foi analisada pela IA.";
+};
+
 const analyzeButtonLabel = (status: Job["status"], analyzingJob: boolean) => {
   if (analyzingJob) {
     return "Analisando...";
   }
-
   if (status === "analyzed") {
     return "Re-analisar vaga";
   }
-
+  if (status === "ready_for_ai") {
+    return "Analisar com IA";
+  }
   return "Analisar esta vaga";
 };
 
@@ -176,6 +193,36 @@ export function JobDetailDrawer({ open, onOpenChange, job, onJobUpdated }: JobDe
     }
   };
 
+  const onUpdateStatus = async (status: "ready_for_ai" | "discarded") => {
+    if (!job || analyzingJob) {
+      return;
+    }
+
+    try {
+      const updatedJob = await updateJobStatus(job.id, status);
+      onJobUpdated(updatedJob);
+      if (status === "ready_for_ai") {
+        toast.success("Vaga classificada como pronta para IA.");
+      } else {
+        toast.success("Vaga descartada com sucesso.");
+      }
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const detail = error.response?.data?.detail;
+        if (typeof detail === "string" && detail.length > 0) {
+          toast.error(detail);
+          return;
+        }
+      }
+
+      if (status === "ready_for_ai") {
+        toast.error("Falha ao classificar como pronta para IA.");
+      } else {
+        toast.error("Falha ao descartar a vaga.");
+      }
+    }
+  };
+
   return (
     <Drawer open={open} onOpenChange={onOpenChange} direction="right">
       <DrawerContent className="w-full p-0 data-[vaul-drawer-direction=right]:w-full data-[vaul-drawer-direction=right]:sm:w-[40vw] data-[vaul-drawer-direction=right]:sm:min-w-[520px] data-[vaul-drawer-direction=right]:sm:max-w-[800px]">
@@ -247,23 +294,54 @@ export function JobDetailDrawer({ open, onOpenChange, job, onJobUpdated }: JobDe
 
                   {job.status === "analyzed" ? (
                     <div className="rounded-lg border border-border/70 bg-background/75 p-3 text-sm leading-relaxed shadow-sm">
-                      {job.ai_summary?.trim() || "Resumo de IA indisponivel para esta vaga."}
+                      {job.ai_summary?.trim() || "Resumo de IA indisponível para esta vaga."}
                     </div>
                   ) : (
                     <div className="rounded-lg border border-dashed border-border/80 bg-background/50 p-3 text-sm text-muted-foreground">
-                      Esta vaga ainda nao passou pela analise da IA. Clique em Analisar esta vaga para processar.
+                      {statusGuidanceMessage(job.status)}
                     </div>
                   )}
 
-                  <Button
-                    type="button"
-                    variant={analyzeButtonVariant(job.status)}
-                    onClick={() => void onAnalyzeJob()}
-                    disabled={analyzingJob || job.status === "discarded"}
-                  >
-                    {analyzingJob ? <Loader2 className="animate-spin" /> : null}
-                    {analyzeButtonLabel(job.status, analyzingJob)}
-                  </Button>
+                  {job.status === "pending" ? (
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="default"
+                        disabled={analyzingJob}
+                        onClick={() => void onUpdateStatus("ready_for_ai")}
+                      >
+                        Classificar como pronta para IA
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        disabled={analyzingJob}
+                        onClick={() => void onUpdateStatus("discarded")}
+                      >
+                        Descartar
+                      </Button>
+                    </div>
+                  ) : job.status === "discarded" ? null : (
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant={analyzeButtonVariant(job.status)}
+                        onClick={() => void onAnalyzeJob()}
+                        disabled={analyzingJob}
+                      >
+                        {analyzingJob ? <Loader2 className="animate-spin" /> : null}
+                        {analyzeButtonLabel(job.status, analyzingJob)}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        disabled={analyzingJob}
+                        onClick={() => void onUpdateStatus("discarded")}
+                      >
+                        Descartar
+                      </Button>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
