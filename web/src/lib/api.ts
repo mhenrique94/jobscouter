@@ -1,10 +1,7 @@
-export async function updateJobStatus(jobId: number, status: JobStatus): Promise<Job> {
-  const response = await api.patch<Job>(`/control/jobs/${jobId}/status`, { status });
-  return response.data;
-}
 import axios from "axios";
 
 export type JobStatus = "pending" | "ready_for_ai" | "discarded" | "analyzed";
+export type ManualJobStatus = "ready_for_ai" | "discarded";
 export type SyncSource = "all" | "remoteok" | "remotar";
 
 export interface JobsFilters {
@@ -143,5 +140,10 @@ export async function analyzeJob(jobId: number): Promise<Job> {
   const response = await api.post<Job>(`/control/analyze/${jobId}`, null, {
     timeout: ANALYZE_JOB_TIMEOUT_MS,
   });
+  return response.data;
+}
+
+export async function updateJobStatus(jobId: number, status: ManualJobStatus): Promise<Job> {
+  const response = await api.patch<Job>(`/control/jobs/${jobId}/status`, { status });
   return response.data;
 }

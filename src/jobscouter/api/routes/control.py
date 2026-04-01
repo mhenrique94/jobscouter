@@ -22,7 +22,7 @@ router = APIRouter(tags=["control"])
 
 
 class JobStatusUpdatePayload(BaseModel):
-    status: str
+    status: Literal["ready_for_ai", "discarded"]
 
 
 _REDACT_PATTERNS = [
@@ -154,14 +154,10 @@ def update_job_status(
     db: Session = Depends(get_session),
 ) -> Job:
     job = db.get(Job, job_id)
-    if job is None or not payload.status:
+    if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vaga nao encontrada.")
 
-    allowed = {JobStatus.ready_for_ai.value, JobStatus.discarded.value}
-    if payload.status not in allowed:
-        raise HTTPException(status_code=422, detail=f"Status permitido: {', '.join(allowed)}")
-
-    job.status = payload.status
+    job.status = JobStatus(payload.status)
     job.updated_at = datetime.now(UTC)
     db.add(job)
     db.commit()
