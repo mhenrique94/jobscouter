@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 from jobscouter.core.logging import get_logger
 from jobscouter.db.models import Job
 from jobscouter.schemas.job import JobPayload
-from jobscouter.services.filter import JobFilterService
+from jobscouter.services.filter import JobFilterService, validate_job_assertiveness
 
 
 @dataclass(slots=True)
@@ -18,22 +18,24 @@ class IngestionStats:
     inserted: int = 0
     updated: int = 0
     skipped: int = 0
+    discarded: int = 0
     failed: int = 0
 
     def add(self, other: IngestionStats) -> None:
         self.inserted += other.inserted
         self.updated += other.updated
         self.skipped += other.skipped
+        self.discarded += other.discarded
         self.failed += other.failed
 
     @property
     def total(self) -> int:
-        return self.inserted + self.updated + self.skipped + self.failed
+        return self.inserted + self.updated + self.skipped + self.discarded + self.failed
 
     def to_pretty_line(self) -> str:
         return (
             f"novas={self.inserted:>3} | atualizadas={self.updated:>3} "
-            f"| ignoradas={self.skipped:>3} | falhas={self.failed:>3}"
+            f"| ignoradas={self.skipped:>3} | descartadas={self.discarded:>3} | falhas={self.failed:>3}"
         )
 
     def __str__(self) -> str:
@@ -54,36 +56,52 @@ class JobIngestionService:
 
     async def ingest_jobs(self, jobs: list[JobPayload]) -> IngestionStats:
         stats = IngestionStats()
-        for job in jobs:
-            try:
-                outcome = self.upsert_job(job)
-                if outcome in (IngestionResult.INSERTED, IngestionResult.UPDATED):
-                    persisted_job = self._find_existing_job(job)
-                else:
-                    persisted_job = None
+        keywords: set[str] = {kw.casefold() for kw in self.filter_service.rules.include_keywords}
 
-                if persisted_job is not None and outcome in (
-                    IngestionResult.INSERTED,
-                    IngestionResult.UPDATED,
-                ):
-                    await self.filter_service.classify_job(persisted_job)
+        for payload in jobs:
+            try:
+                # Passo A: Verificar se a vaga já existe no banco
+                existing = self._find_existing_job(payload)
+                if existing is not None:
+                    outcome = self.upsert_job(payload)
+                    if outcome == IngestionResult.UPDATED:
+                        stats.updated += 1
+                    else:
+                        self.logger.debug("Vaga ignorada: duplicada | url=%s", payload.url)
+                        stats.skipped += 1
+                    continue
+
+                # Passo B: Aplicar validate_job_assertiveness
+                job_content = f"{payload.title}\n{payload.description_raw}"
+                is_assertive, match_count = validate_job_assertiveness(job_content, keywords)
+
+                # Passo C: Descartar se assertividade insuficiente
+                if not is_assertive:
+                    self.logger.info(
+                        "Vaga descartada: assertividade insuficiente - matches: %s | url=%s",
+                        match_count,
+                        payload.url,
+                    )
+                    stats.discarded += 1
+                    continue
+
+                # Passo D: INSERT final + classificação para IA
+                self.upsert_job(payload)
+                persisted = self._find_existing_job(payload)
+                if persisted is not None:
+                    await self.filter_service.classify_job(persisted)
+                stats.inserted += 1
+
             except Exception as exc:
                 stats.failed += 1
-                self.logger.exception("Falha ao persistir vaga %s: %s", job.url, exc)
-                continue
-
-            if outcome == IngestionResult.INSERTED:
-                stats.inserted += 1
-            elif outcome == IngestionResult.UPDATED:
-                stats.updated += 1
-            else:
-                stats.skipped += 1
+                self.logger.exception("Falha ao persistir vaga %s: %s", payload.url, exc)
 
         self.logger.debug(
-            "Ingestao concluida | inserted=%s updated=%s skipped=%s failed=%s",
+            "Ingestao concluida | inserted=%s updated=%s skipped=%s discarded=%s failed=%s",
             stats.inserted,
             stats.updated,
             stats.skipped,
+            stats.discarded,
             stats.failed,
         )
         return stats

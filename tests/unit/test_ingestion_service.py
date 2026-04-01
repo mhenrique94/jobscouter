@@ -4,9 +4,11 @@ import asyncio
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
+import pytest
+
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from jobscouter.db.models import Job
+from jobscouter.db.models import FilterConfig, Job
 from jobscouter.schemas.job import JobPayload
 from jobscouter.services.ingestion import IngestionResult, JobIngestionService
 
@@ -147,10 +149,20 @@ def test_ingest_jobs_skips_classification_when_outcome_skipped() -> None:
         url="https://example.com/jobs/abc-123",
         source="remoteok",
         search_keyword="python",
+        description_raw="Python backend role",
         created_at=datetime.now(UTC),
     )
 
     with Session(engine) as session:
+        # 3 keywords que coincidem com title+description para passar assertividade
+        session.add(FilterConfig(
+            id=1,
+            search_terms=["python"],
+            include_keywords=["backend", "engineer", "python"],
+            exclude_keywords=[],
+        ))
+        session.flush()
+
         service = JobIngestionService(session)
         service.filter_service.classify_job = AsyncMock(return_value=None)
 
@@ -160,3 +172,99 @@ def test_ingest_jobs_skips_classification_when_outcome_skipped() -> None:
         assert first_stats.inserted == 1
         assert second_stats.skipped == 1
         assert service.filter_service.classify_job.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_nova_vaga_e_descartada_quando_assertividade_insuficiente() -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        session.add(FilterConfig(
+            id=1,
+            search_terms=["python"],
+            include_keywords=["python", "fastapi", "django"],
+            exclude_keywords=[],
+        ))
+        session.flush()
+
+        payload = JobPayload(
+            external_id="xyz-001",
+            title="Vendedor",
+            company="Loja",
+            url="https://example.com/jobs/xyz-001",
+            source="remoteok",
+            description_raw="Vaga comercial sem termos tecnicos",
+            created_at=datetime.now(UTC),
+        )
+        service = JobIngestionService(session)
+        stats = await service.ingest_jobs([payload])
+
+        assert stats.inserted == 0
+        assert stats.discarded == 1
+        rows = session.exec(select(Job)).all()
+        assert len(rows) == 0
+
+
+@pytest.mark.asyncio
+async def test_nova_vaga_e_inserida_quando_assertividade_suficiente() -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        session.add(FilterConfig(
+            id=1,
+            search_terms=["python"],
+            include_keywords=["python", "fastapi", "django"],
+            exclude_keywords=[],
+        ))
+        session.flush()
+
+        payload = JobPayload(
+            external_id="xyz-002",
+            title="Backend Engineer Python",
+            company="Acme",
+            url="https://example.com/jobs/xyz-002",
+            source="remoteok",
+            description_raw="Projeto usando Python, FastAPI e Django",
+            created_at=datetime.now(UTC),
+        )
+        service = JobIngestionService(session)
+        stats = await service.ingest_jobs([payload])
+
+        assert stats.inserted == 1
+        assert stats.discarded == 0
+        rows = session.exec(select(Job)).all()
+        assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_vaga_existente_e_ignorada_como_duplicada() -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        session.add(FilterConfig(
+            id=1,
+            search_terms=["python"],
+            include_keywords=["python", "fastapi", "django"],
+            exclude_keywords=[],
+        ))
+        session.flush()
+
+        payload = JobPayload(
+            external_id="xyz-003",
+            title="Backend Engineer Python",
+            company="Acme",
+            url="https://example.com/jobs/xyz-003",
+            source="remoteok",
+            description_raw="Python FastAPI Django developer",
+            created_at=datetime.now(UTC),
+        )
+        service = JobIngestionService(session)
+        await service.ingest_jobs([payload])
+
+        stats = await service.ingest_jobs([payload])
+        assert stats.skipped == 1
+        assert stats.inserted == 0
+        assert stats.discarded == 0

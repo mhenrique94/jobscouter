@@ -6,7 +6,7 @@ import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
 from jobscouter.db.models import FilterConfig, Job, JobStatus
-from jobscouter.services.filter import JobFilterService
+from jobscouter.services.filter import JobFilterService, validate_job_assertiveness
 
 
 def _build_job(title: str, description_raw: str, status: JobStatus = JobStatus.pending) -> Job:
@@ -83,6 +83,36 @@ filters:
         assert result == JobStatus.ready_for_ai
         assert job.status == JobStatus.ready_for_ai
         assert job.filter_reason is None
+
+
+def test_assertiveness_retorna_true_quando_threshold_atingido() -> None:
+    keywords = {"python", "fastapi", "django", "postgresql"}
+    content = "Backend Engineer com Python, FastAPI e Django"
+    is_assertive, count = validate_job_assertiveness(content, keywords)
+    assert is_assertive is True
+    assert count == 3
+
+
+def test_assertiveness_retorna_false_quando_abaixo_do_threshold() -> None:
+    keywords = {"python", "fastapi", "django"}
+    content = "Backend Engineer com Python apenas"
+    is_assertive, count = validate_job_assertiveness(content, keywords, threshold=3)
+    assert is_assertive is False
+    assert count == 1
+
+
+def test_assertiveness_e_case_insensitive() -> None:
+    keywords = {"python", "fastapi"}
+    content = "Engenheiro com PYTHON e FASTAPI"
+    is_assertive, count = validate_job_assertiveness(content, keywords, threshold=2)
+    assert is_assertive is True
+    assert count == 2
+
+
+def test_assertiveness_com_keywords_vazias_retorna_false() -> None:
+    is_assertive, count = validate_job_assertiveness("Qualquer conteudo", set())
+    assert is_assertive is False
+    assert count == 0
 
 
 @pytest.mark.asyncio

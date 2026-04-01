@@ -11,6 +11,20 @@ from jobscouter.core.logging import get_logger
 from jobscouter.db.models import FilterConfig, Job, JobStatus, utcnow
 
 
+def validate_job_assertiveness(
+    job_content: str,
+    keywords: set[str],
+    threshold: int = 3,
+) -> tuple[bool, int]:
+    """Retorna (é_assertivo, contagem_de_matches).
+
+    keywords deve estar em casefold para comparação correta.
+    """
+    content_lower = job_content.casefold()
+    match_count = sum(1 for kw in keywords if kw in content_lower)
+    return match_count >= threshold, match_count
+
+
 @dataclass(frozen=True, slots=True)
 class FilterRules:
     exclude_keywords: tuple[str, ...] = ()
