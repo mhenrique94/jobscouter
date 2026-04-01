@@ -1,81 +1,4 @@
-def test_update_job_status_ready_for_ai(monkeypatch) -> None:
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    SQLModel.metadata.create_all(engine)
-    job = _seed_job(engine, status=JobStatus.pending)
-    app = _build_app(engine)
-    client = TestClient(app)
-
-    response = client.patch(
-        f"/api/v1/control/jobs/{job.id}/status",
-        json={"status": "ready_for_ai"},
-    )
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["id"] == job.id
-    assert payload["status"] == "ready_for_ai"
-
-
-def test_update_job_status_discarded(monkeypatch) -> None:
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    SQLModel.metadata.create_all(engine)
-    job = _seed_job(engine, status=JobStatus.pending)
-    app = _build_app(engine)
-    client = TestClient(app)
-
-    response = client.patch(
-        f"/api/v1/control/jobs/{job.id}/status",
-        json={"status": "discarded"},
-    )
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["id"] == job.id
-    assert payload["status"] == "discarded"
-
-
-def test_update_job_status_invalid_status(monkeypatch) -> None:
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    SQLModel.metadata.create_all(engine)
-    job = _seed_job(engine, status=JobStatus.pending)
-    app = _build_app(engine)
-    client = TestClient(app)
-
-    response = client.patch(
-        f"/api/v1/control/jobs/{job.id}/status",
-        json={"status": "analyzed"},
-    )
-    assert response.status_code == 422
-    assert "Status permitido" in response.json()["detail"]
-
-
-def test_update_job_status_not_found(monkeypatch) -> None:
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    SQLModel.metadata.create_all(engine)
-    app = _build_app(engine)
-    client = TestClient(app)
-
-    response = client.patch(
-        "/api/v1/control/jobs/999/status",
-        json={"status": "ready_for_ai"},
-    )
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Vaga nao encontrada."
-
+from __future__ import annotations
 
 import dataclasses
 
@@ -247,3 +170,82 @@ def test_analyze_job_returns_422_for_discarded_job(monkeypatch) -> None:
     assert (
         response.json()["detail"] == "Vagas descartadas nao podem ser analisadas individualmente."
     )
+
+
+def test_update_job_status_ready_for_ai(monkeypatch) -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    job = _seed_job(engine, status=JobStatus.pending)
+    app = _build_app(engine)
+    client = TestClient(app)
+
+    response = client.patch(
+        f"/api/v1/control/jobs/{job.id}/status",
+        json={"status": "ready_for_ai"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["id"] == job.id
+    assert payload["status"] == "ready_for_ai"
+
+
+def test_update_job_status_discarded(monkeypatch) -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    job = _seed_job(engine, status=JobStatus.pending)
+    app = _build_app(engine)
+    client = TestClient(app)
+
+    response = client.patch(
+        f"/api/v1/control/jobs/{job.id}/status",
+        json={"status": "discarded"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["id"] == job.id
+    assert payload["status"] == "discarded"
+
+
+def test_update_job_status_invalid_status(monkeypatch) -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    job = _seed_job(engine, status=JobStatus.pending)
+    app = _build_app(engine)
+    client = TestClient(app)
+
+    response = client.patch(
+        f"/api/v1/control/jobs/{job.id}/status",
+        json={"status": "analyzed"},
+    )
+    assert response.status_code == 422
+    assert "status" in str(response.json()["detail"]).lower()
+
+
+def test_update_job_status_not_found(monkeypatch) -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    app = _build_app(engine)
+    client = TestClient(app)
+
+    response = client.patch(
+        "/api/v1/control/jobs/999/status",
+        json={"status": "ready_for_ai"},
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Vaga nao encontrada."

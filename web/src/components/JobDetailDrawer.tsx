@@ -148,6 +148,7 @@ function DescriptionContent({ content }: { content: string }) {
 
 export function JobDetailDrawer({ open, onOpenChange, job, onJobUpdated }: JobDetailDrawerProps) {
   const [analyzingJob, setAnalyzingJob] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
   const [updatedAtLabel, setUpdatedAtLabel] = useState<string | null>(null);
 
   useEffect(() => {
@@ -155,7 +156,7 @@ export function JobDetailDrawer({ open, onOpenChange, job, onJobUpdated }: JobDe
   }, [job?.id]);
 
   const onAnalyzeJob = async () => {
-    if (!job || analyzingJob || job.status === "discarded") {
+    if (!job || analyzingJob || updatingStatus || job.status === "discarded") {
       return;
     }
 
@@ -194,11 +195,12 @@ export function JobDetailDrawer({ open, onOpenChange, job, onJobUpdated }: JobDe
   };
 
   const onUpdateStatus = async (status: "ready_for_ai" | "discarded") => {
-    if (!job || analyzingJob) {
+    if (!job || analyzingJob || updatingStatus) {
       return;
     }
 
     try {
+      setUpdatingStatus(true);
       const updatedJob = await updateJobStatus(job.id, status);
       onJobUpdated(updatedJob);
       if (status === "ready_for_ai") {
@@ -220,6 +222,8 @@ export function JobDetailDrawer({ open, onOpenChange, job, onJobUpdated }: JobDe
       } else {
         toast.error("Falha ao descartar a vaga.");
       }
+    } finally {
+      setUpdatingStatus(false);
     }
   };
 
@@ -307,17 +311,19 @@ export function JobDetailDrawer({ open, onOpenChange, job, onJobUpdated }: JobDe
                       <Button
                         type="button"
                         variant="default"
-                        disabled={analyzingJob}
+                        disabled={analyzingJob || updatingStatus}
                         onClick={() => void onUpdateStatus("ready_for_ai")}
                       >
+                        {updatingStatus ? <Loader2 className="animate-spin" /> : null}
                         Classificar como pronta para IA
                       </Button>
                       <Button
                         type="button"
                         variant="destructive"
-                        disabled={analyzingJob}
+                        disabled={analyzingJob || updatingStatus}
                         onClick={() => void onUpdateStatus("discarded")}
                       >
+                        {updatingStatus ? <Loader2 className="animate-spin" /> : null}
                         Descartar
                       </Button>
                     </div>
@@ -327,7 +333,7 @@ export function JobDetailDrawer({ open, onOpenChange, job, onJobUpdated }: JobDe
                         type="button"
                         variant={analyzeButtonVariant(job.status)}
                         onClick={() => void onAnalyzeJob()}
-                        disabled={analyzingJob}
+                        disabled={analyzingJob || updatingStatus}
                       >
                         {analyzingJob ? <Loader2 className="animate-spin" /> : null}
                         {analyzeButtonLabel(job.status, analyzingJob)}
@@ -335,9 +341,10 @@ export function JobDetailDrawer({ open, onOpenChange, job, onJobUpdated }: JobDe
                       <Button
                         type="button"
                         variant="destructive"
-                        disabled={analyzingJob}
+                        disabled={analyzingJob || updatingStatus}
                         onClick={() => void onUpdateStatus("discarded")}
                       >
+                        {updatingStatus ? <Loader2 className="animate-spin" /> : null}
                         Descartar
                       </Button>
                     </div>
