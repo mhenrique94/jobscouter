@@ -16,12 +16,9 @@ def validate_job_assertiveness(
     keywords: set[str],
     threshold: int = 3,
 ) -> tuple[bool, int]:
-    """Retorna (é_assertivo, contagem_de_matches).
-
-    keywords deve estar em casefold para comparação correta.
-    """
+    """Retorna (é_assertivo, contagem_de_matches)."""
     content_lower = job_content.casefold()
-    match_count = sum(1 for kw in keywords if kw in content_lower)
+    match_count = sum(1 for kw in keywords if kw.casefold() in content_lower)
     return match_count >= threshold, match_count
 
 

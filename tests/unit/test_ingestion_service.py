@@ -31,8 +31,8 @@ def test_ingestion_is_idempotent() -> None:
 
     with Session(engine) as session:
         service = JobIngestionService(session)
-        first = service.upsert_job(payload)
-        second = service.upsert_job(payload)
+        first, _ = service.upsert_job(payload)
+        second, _ = service.upsert_job(payload)
         session.commit()
 
     assert first == IngestionResult.INSERTED
@@ -122,9 +122,9 @@ def test_upsert_merges_search_keywords_for_same_job() -> None:
 
     with Session(engine) as session:
         service = JobIngestionService(session)
-        first = service.upsert_job(JobPayload(**base, search_keyword="python"))
-        second = service.upsert_job(JobPayload(**base, search_keyword="django"))
-        third = service.upsert_job(JobPayload(**base, search_keyword="python"))  # duplicado
+        first, _ = service.upsert_job(JobPayload(**base, search_keyword="python"))
+        second, _ = service.upsert_job(JobPayload(**base, search_keyword="django"))
+        third, _ = service.upsert_job(JobPayload(**base, search_keyword="python"))  # duplicado
         session.commit()
 
     assert first == IngestionResult.INSERTED
@@ -241,6 +241,47 @@ async def test_nova_vaga_e_inserida_quando_assertividade_suficiente() -> None:
         assert stats.discarded == 0
         rows = session.exec(select(Job)).all()
         assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_ingest_jobs_classifica_quando_outcome_updated() -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        session.add(
+            FilterConfig(
+                id=1,
+                search_terms=["python"],
+                include_keywords=["backend", "engineer", "python"],
+                exclude_keywords=[],
+            )
+        )
+        session.flush()
+
+        payload_v1 = JobPayload(
+            external_id="abc-upd",
+            title="Backend Engineer Python",
+            company="Acme",
+            url="https://example.com/jobs/abc-upd",
+            source="remoteok",
+            search_keyword="python",
+            description_raw="Python backend role",
+            created_at=datetime.now(UTC),
+        )
+        payload_v2 = JobPayload(
+            **{**payload_v1.__dict__, "description_raw": "Python backend engineer updated desc"},
+        )
+
+        service = JobIngestionService(session)
+        service.filter_service.classify_job = AsyncMock(return_value=None)
+
+        first_stats = await service.ingest_jobs([payload_v1])
+        second_stats = await service.ingest_jobs([payload_v2])
+
+        assert first_stats.inserted == 1
+        assert second_stats.updated == 1
+        assert service.filter_service.classify_job.await_count == 2
 
 
 @pytest.mark.asyncio

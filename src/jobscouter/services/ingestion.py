@@ -56,26 +56,27 @@ class JobIngestionService:
 
     async def ingest_jobs(self, jobs: list[JobPayload]) -> IngestionStats:
         stats = IngestionStats()
-        keywords: set[str] = {kw.casefold() for kw in self.filter_service.rules.include_keywords}
+        keywords: set[str] = set(self.filter_service.rules.include_keywords)
 
         for payload in jobs:
             try:
-                # Passo A: Verificar se a vaga já existe no banco
                 existing = self._find_existing_job(payload)
+
                 if existing is not None:
-                    outcome = self.upsert_job(payload)
+                    # Passo A: vaga já existe — upsert sem re-query
+                    outcome, job = self._do_upsert(payload, existing)
                     if outcome == IngestionResult.UPDATED:
+                        await self.filter_service.classify_job(job)
                         stats.updated += 1
                     else:
                         self.logger.debug("Vaga ignorada: duplicada | url=%s", payload.url)
                         stats.skipped += 1
                     continue
 
-                # Passo B: Aplicar validate_job_assertiveness
+                # Passo B: vaga nova — verificar assertividade
                 job_content = f"{payload.title}\n{payload.description_raw}"
                 is_assertive, match_count = validate_job_assertiveness(job_content, keywords)
 
-                # Passo C: Descartar se assertividade insuficiente
                 if not is_assertive:
                     self.logger.info(
                         "Vaga descartada: assertividade insuficiente - matches: %s | url=%s",
@@ -85,11 +86,9 @@ class JobIngestionService:
                     stats.discarded += 1
                     continue
 
-                # Passo D: INSERT final + classificação para IA
-                self.upsert_job(payload)
-                persisted = self._find_existing_job(payload)
-                if persisted is not None:
-                    await self.filter_service.classify_job(persisted)
+                # Passo C: INSERT + classificação
+                outcome, job = self._do_upsert(payload, existing=None)
+                await self.filter_service.classify_job(job)
                 stats.inserted += 1
 
             except Exception as exc:
@@ -110,12 +109,16 @@ class JobIngestionService:
         statement = select(func.max(Job.created_at)).where(Job.source == source)
         return self.session.exec(statement).one()
 
-    def upsert_job(self, payload: JobPayload) -> IngestionResult:
+    def upsert_job(self, payload: JobPayload) -> tuple[IngestionResult, Job]:
         existing = self._find_existing_job(payload)
+        return self._do_upsert(payload, existing)
+
+    def _do_upsert(self, payload: JobPayload, existing: Job | None) -> tuple[IngestionResult, Job]:
         if existing is None:
-            self.session.add(self._build_model(payload))
+            job = self._build_model(payload)
+            self.session.add(job)
             self.session.flush()
-            return IngestionResult.INSERTED
+            return IngestionResult.INSERTED, job
 
         changed = False
 
@@ -145,9 +148,9 @@ class JobIngestionService:
             existing.last_seen_at = datetime.now(UTC)
             self.session.add(existing)
             self.session.flush()
-            return IngestionResult.UPDATED
+            return IngestionResult.UPDATED, existing
 
-        return IngestionResult.SKIPPED
+        return IngestionResult.SKIPPED, existing
 
     def _find_existing_job(self, payload: JobPayload) -> Job | None:
         if payload.external_id:
