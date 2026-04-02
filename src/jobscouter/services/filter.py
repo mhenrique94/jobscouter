@@ -27,8 +27,7 @@ def validate_job_assertiveness(
         return True, 0
     content_lower = job_content.casefold()
     match_count = sum(
-        1 for kw in keywords
-        if re.search(r"\b" + re.escape(kw.casefold()) + r"\b", content_lower)
+        1 for kw in keywords if re.search(r"\b" + re.escape(kw.casefold()) + r"\b", content_lower)
     )
     return match_count >= threshold, match_count
 

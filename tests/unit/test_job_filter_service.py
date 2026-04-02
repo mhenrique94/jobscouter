@@ -109,9 +109,10 @@ def test_assertiveness_e_case_insensitive() -> None:
     assert count == 2
 
 
-def test_assertiveness_com_keywords_vazias_retorna_false() -> None:
+def test_assertiveness_com_keywords_vazias_desabilita_validacao() -> None:
+    # keywords vazio significa "validação desabilitada" — não deve descartar nenhuma vaga
     is_assertive, count = validate_job_assertiveness("Qualquer conteudo", set())
-    assert is_assertive is False
+    assert is_assertive is True
     assert count == 0
 
 

@@ -126,7 +126,9 @@ def _run_assertiveness_cleanup_sync(threshold: int) -> None:
 
                 for job in jobs:
                     content = f"{job.title}\n{job.description_raw}"
-                    is_assertive, match_count = validate_job_assertiveness(content, keywords, threshold)
+                    is_assertive, match_count = validate_job_assertiveness(
+                        content, keywords, threshold
+                    )
                     if not is_assertive:
                         logger.info(
                             "[control.cleanup] Excluindo vaga id=%s - matches: %s | url=%s",
