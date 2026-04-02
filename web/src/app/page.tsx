@@ -214,6 +214,7 @@ function HomeContent() {
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [tabTotals, setTabTotals] = useState<Partial<Record<DashboardTabKey, number>>>({});
   const requestIdRef = useRef(0);
+  const silentRefreshIdRef = useRef(0);
   const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const totalPages = useMemo(
@@ -339,11 +340,11 @@ function HomeContent() {
   }, [currentTabKey, loadTabTotal]);
 
   const refreshSilently = useCallback(async (page: number, tabKey: DashboardTabKey) => {
-    const requestId = ++requestIdRef.current;
+    const requestId = ++silentRefreshIdRef.current;
     const selectedTab = getTabDefinition(tabKey);
     try {
       const data = await getJobs({ ...selectedTab.filters, page, size: DEFAULT_PAGE_SIZE });
-      if (requestId !== requestIdRef.current) return;
+      if (requestId !== silentRefreshIdRef.current) return;
       setJobs(data.items);
       setTotalJobs(data.total);
       setPageSize(data.size);

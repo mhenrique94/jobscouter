@@ -89,33 +89,58 @@ async def _run_ingest_sync(source: str, limit: int) -> None:
 def _run_assertiveness_cleanup_sync(threshold: int) -> None:
     logger = get_logger("jobscouter.api.control")
     logger.info("[control.cleanup] Iniciando limpeza de assertividade | threshold=%s", threshold)
+    _BATCH_SIZE = 200
     try:
         with Session(engine) as session:
             config = FilterConfigService(session).get_active_config()
             keywords: set[str] = {kw.casefold() for kw in config.include_keywords}
 
-            statement = select(Job).where(Job.status != JobStatus.analyzed)
-            jobs = session.exec(statement).all()
-            logger.info("[control.cleanup] Vagas a avaliar: %s", len(jobs))
+            if not keywords:
+                logger.warning(
+                    "[control.cleanup] Abortando: include_keywords vazio. "
+                    "Configure keywords antes de executar a limpeza para evitar exclusao em massa."
+                )
+                return
 
             deleted = 0
             kept = 0
-            for job in jobs:
-                content = f"{job.title}\n{job.description_raw}"
-                is_assertive, match_count = validate_job_assertiveness(content, keywords, threshold)
-                if not is_assertive:
-                    logger.info(
-                        "[control.cleanup] Excluindo vaga id=%s - matches: %s | url=%s",
-                        job.id,
-                        match_count,
-                        job.url,
-                    )
-                    session.delete(job)
-                    deleted += 1
-                else:
-                    kept += 1
+            last_id = 0
 
-            session.commit()
+            while True:
+                statement = (
+                    select(Job)
+                    .where(Job.status != JobStatus.analyzed, Job.id > last_id)
+                    .order_by(Job.id)
+                    .limit(_BATCH_SIZE)
+                )
+                jobs = session.exec(statement).all()
+                if not jobs:
+                    break
+
+                logger.info(
+                    "[control.cleanup] Processando lote | last_id=%s tamanho=%s",
+                    last_id,
+                    len(jobs),
+                )
+                last_id = jobs[-1].id
+
+                for job in jobs:
+                    content = f"{job.title}\n{job.description_raw}"
+                    is_assertive, match_count = validate_job_assertiveness(content, keywords, threshold)
+                    if not is_assertive:
+                        logger.info(
+                            "[control.cleanup] Excluindo vaga id=%s - matches: %s | url=%s",
+                            job.id,
+                            match_count,
+                            job.url,
+                        )
+                        session.delete(job)
+                        deleted += 1
+                    else:
+                        kept += 1
+
+                session.commit()
+
             logger.info("[control.cleanup] Concluido | excluidas=%s preservadas=%s", deleted, kept)
     except Exception as exc:
         logger.exception("[control.cleanup] Falha inesperada na task: %s", exc)

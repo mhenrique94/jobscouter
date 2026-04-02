@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib import import_module
@@ -16,9 +17,19 @@ def validate_job_assertiveness(
     keywords: set[str],
     threshold: int = 3,
 ) -> tuple[bool, int]:
-    """Retorna (é_assertivo, contagem_de_matches)."""
+    """Retorna (é_assertivo, contagem_de_matches).
+
+    Retorna (True, 0) quando keywords está vazio (validação desabilitada).
+    Usa limites de palavra (\\b) para evitar falsos positivos por substring
+    (ex.: keyword "go" não casa com "django").
+    """
+    if not keywords:
+        return True, 0
     content_lower = job_content.casefold()
-    match_count = sum(1 for kw in keywords if kw.casefold() in content_lower)
+    match_count = sum(
+        1 for kw in keywords
+        if re.search(r"\b" + re.escape(kw.casefold()) + r"\b", content_lower)
+    )
     return match_count >= threshold, match_count
 
 
