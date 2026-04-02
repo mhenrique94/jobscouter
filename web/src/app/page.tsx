@@ -332,6 +332,7 @@ function HomeContent() {
   );
 
   useEffect(() => {
+    silentRefreshIdRef.current += 1;
     void loadJobs(currentPage, currentTabKey);
   }, [currentPage, currentTabKey, loadJobs]);
 

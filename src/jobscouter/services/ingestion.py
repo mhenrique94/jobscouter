@@ -60,36 +60,37 @@ class JobIngestionService:
 
         for payload in jobs:
             try:
-                existing = self._find_existing_job(payload)
+                with self.session.begin_nested():
+                    existing = self._find_existing_job(payload)
 
-                if existing is not None:
-                    # Passo A: vaga já existe — upsert sem re-query
-                    outcome, job = self._do_upsert(payload, existing)
-                    if outcome == IngestionResult.UPDATED:
-                        await self.filter_service.classify_job(job)
-                        stats.updated += 1
-                    else:
-                        self.logger.debug("Vaga ignorada: duplicada | url=%s", payload.url)
-                        stats.skipped += 1
-                    continue
+                    if existing is not None:
+                        # Passo A: vaga já existe — upsert sem re-query
+                        outcome, job = self._do_upsert(payload, existing)
+                        if outcome == IngestionResult.UPDATED:
+                            await self.filter_service.classify_job(job)
+                            stats.updated += 1
+                        else:
+                            self.logger.debug("Vaga ignorada: duplicada | url=%s", payload.url)
+                            stats.skipped += 1
+                        continue
 
-                # Passo B: vaga nova — verificar assertividade
-                job_content = f"{payload.title}\n{payload.description_raw}"
-                is_assertive, match_count = validate_job_assertiveness(job_content, keywords)
+                    # Passo B: vaga nova — verificar assertividade
+                    job_content = f"{payload.title}\n{payload.description_raw}"
+                    is_assertive, match_count = validate_job_assertiveness(job_content, keywords)
 
-                if not is_assertive:
-                    self.logger.info(
-                        "Vaga descartada: assertividade insuficiente - matches: %s | url=%s",
-                        match_count,
-                        payload.url,
-                    )
-                    stats.discarded += 1
-                    continue
+                    if not is_assertive:
+                        self.logger.info(
+                            "Vaga descartada: assertividade insuficiente - matches: %s | url=%s",
+                            match_count,
+                            payload.url,
+                        )
+                        stats.discarded += 1
+                        continue
 
-                # Passo C: INSERT + classificação
-                outcome, job = self._do_upsert(payload, existing=None)
-                await self.filter_service.classify_job(job)
-                stats.inserted += 1
+                    # Passo C: INSERT + classificação
+                    outcome, job = self._do_upsert(payload, existing=None)
+                    await self.filter_service.classify_job(job)
+                    stats.inserted += 1
 
             except Exception as exc:
                 stats.failed += 1
