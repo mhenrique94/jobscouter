@@ -214,6 +214,8 @@ function HomeContent() {
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [tabTotals, setTabTotals] = useState<Partial<Record<DashboardTabKey, number>>>({});
   const requestIdRef = useRef(0);
+  const silentRefreshIdRef = useRef(0);
+  const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(totalJobs / Math.max(1, pageSize))),
@@ -330,12 +332,37 @@ function HomeContent() {
   );
 
   useEffect(() => {
+    silentRefreshIdRef.current += 1;
     void loadJobs(currentPage, currentTabKey);
   }, [currentPage, currentTabKey, loadJobs]);
 
   useEffect(() => {
     void loadTabTotal(currentTabKey);
   }, [currentTabKey, loadTabTotal]);
+
+  const refreshSilently = useCallback(async (page: number, tabKey: DashboardTabKey) => {
+    const requestId = ++silentRefreshIdRef.current;
+    const selectedTab = getTabDefinition(tabKey);
+    try {
+      const data = await getJobs({ ...selectedTab.filters, page, size: DEFAULT_PAGE_SIZE });
+      if (requestId !== silentRefreshIdRef.current) return;
+      setJobs(data.items);
+      setTotalJobs(data.total);
+      setPageSize(data.size);
+      setTabTotals({});
+    } catch {
+      // Silencioso — não exibe erro no auto-refresh.
+    }
+  }, []);
+
+  useEffect(() => {
+    autoRefreshRef.current = setInterval(() => {
+      void refreshSilently(currentPage, currentTabKey);
+    }, 60_000);
+    return () => {
+      if (autoRefreshRef.current) clearInterval(autoRefreshRef.current);
+    };
+  }, [currentPage, currentTabKey, refreshSilently]);
 
   const onSyncIngest = async () => {
     try {
