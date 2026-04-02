@@ -199,7 +199,7 @@ def sync_ingest(
         default="all",
         description="Define a fonte de vagas a sincronizar.",
     ),
-    limit: int = Query(default=20, ge=1, description="Limite de vagas por fonte no ciclo atual."),
+    limit: int = Query(default=100, ge=1, description="Limite de vagas por fonte no ciclo atual."),
 ) -> dict[str, str]:
     _ = db
     background_tasks.add_task(_run_ingest_sync, source, limit)

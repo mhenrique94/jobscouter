@@ -117,7 +117,7 @@ export async function patchConfig(payload: FilterConfigPatchPayload): Promise<Fi
   return response.data;
 }
 
-export async function syncIngest(source: SyncSource = "all", limit = 20): Promise<BackgroundTaskAccepted> {
+export async function syncIngest(source: SyncSource = "all", limit = 100): Promise<BackgroundTaskAccepted> {
   const response = await api.post<BackgroundTaskAccepted>("/control/sync/ingest", null, {
     params: { source, limit },
   });

@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
-
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from jobscouter.db.models import FilterConfig, Job
@@ -155,12 +154,14 @@ def test_ingest_jobs_skips_classification_when_outcome_skipped() -> None:
 
     with Session(engine) as session:
         # 3 keywords que coincidem com title+description para passar assertividade
-        session.add(FilterConfig(
-            id=1,
-            search_terms=["python"],
-            include_keywords=["backend", "engineer", "python"],
-            exclude_keywords=[],
-        ))
+        session.add(
+            FilterConfig(
+                id=1,
+                search_terms=["python"],
+                include_keywords=["backend", "engineer", "python"],
+                exclude_keywords=[],
+            )
+        )
         session.flush()
 
         service = JobIngestionService(session)
@@ -180,12 +181,14 @@ async def test_nova_vaga_e_descartada_quando_assertividade_insuficiente() -> Non
     SQLModel.metadata.create_all(engine)
 
     with Session(engine) as session:
-        session.add(FilterConfig(
-            id=1,
-            search_terms=["python"],
-            include_keywords=["python", "fastapi", "django"],
-            exclude_keywords=[],
-        ))
+        session.add(
+            FilterConfig(
+                id=1,
+                search_terms=["python"],
+                include_keywords=["python", "fastapi", "django"],
+                exclude_keywords=[],
+            )
+        )
         session.flush()
 
         payload = JobPayload(
@@ -212,12 +215,14 @@ async def test_nova_vaga_e_inserida_quando_assertividade_suficiente() -> None:
     SQLModel.metadata.create_all(engine)
 
     with Session(engine) as session:
-        session.add(FilterConfig(
-            id=1,
-            search_terms=["python"],
-            include_keywords=["python", "fastapi", "django"],
-            exclude_keywords=[],
-        ))
+        session.add(
+            FilterConfig(
+                id=1,
+                search_terms=["python"],
+                include_keywords=["python", "fastapi", "django"],
+                exclude_keywords=[],
+            )
+        )
         session.flush()
 
         payload = JobPayload(
@@ -244,12 +249,14 @@ async def test_vaga_existente_e_ignorada_como_duplicada() -> None:
     SQLModel.metadata.create_all(engine)
 
     with Session(engine) as session:
-        session.add(FilterConfig(
-            id=1,
-            search_terms=["python"],
-            include_keywords=["python", "fastapi", "django"],
-            exclude_keywords=[],
-        ))
+        session.add(
+            FilterConfig(
+                id=1,
+                search_terms=["python"],
+                include_keywords=["python", "fastapi", "django"],
+                exclude_keywords=[],
+            )
+        )
         session.flush()
 
         payload = JobPayload(

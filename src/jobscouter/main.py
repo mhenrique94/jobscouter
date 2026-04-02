@@ -175,7 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fonte especifica a ser executada.",
     )
     parser.add_argument(
-        "--limit", type=_positive_int, default=None, help="Limita a quantidade de vagas por fonte."
+        "--limit", type=_positive_int, default=100, help="Limita a quantidade de vagas por fonte."
     )
     parser.add_argument(
         "--keyword",
