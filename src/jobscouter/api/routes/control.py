@@ -16,6 +16,7 @@ from jobscouter.db.session import engine
 from jobscouter.scrapers.remotar import RemotarScraper
 from jobscouter.scrapers.remoteok import RemoteOKScraper
 from jobscouter.services.analyzer import AIAnalyzerService
+from jobscouter.services.filter import FilterConfigService, validate_job_assertiveness
 from jobscouter.services.ingestion import IngestionStats, JobIngestionService
 
 router = APIRouter(tags=["control"])
@@ -83,6 +84,41 @@ async def _run_ingest_sync(source: str, limit: int) -> None:
             logger.info("[control.ingest] Concluido | %s", total_stats.to_pretty_line())
     except Exception as exc:
         logger.exception("[control.ingest] Falha inesperada na task: %s", exc)
+
+
+def _run_assertiveness_cleanup_sync(threshold: int) -> None:
+    logger = get_logger("jobscouter.api.control")
+    logger.info("[control.cleanup] Iniciando limpeza de assertividade | threshold=%s", threshold)
+    try:
+        with Session(engine) as session:
+            config = FilterConfigService(session).get_active_config()
+            keywords: set[str] = {kw.casefold() for kw in config.include_keywords}
+
+            statement = select(Job).where(Job.status != JobStatus.analyzed)
+            jobs = session.exec(statement).all()
+            logger.info("[control.cleanup] Vagas a avaliar: %s", len(jobs))
+
+            deleted = 0
+            kept = 0
+            for job in jobs:
+                content = f"{job.title}\n{job.description_raw}"
+                is_assertive, match_count = validate_job_assertiveness(content, keywords, threshold)
+                if not is_assertive:
+                    logger.info(
+                        "[control.cleanup] Excluindo vaga id=%s - matches: %s | url=%s",
+                        job.id,
+                        match_count,
+                        job.url,
+                    )
+                    session.delete(job)
+                    deleted += 1
+                else:
+                    kept += 1
+
+            session.commit()
+            logger.info("[control.cleanup] Concluido | excluidas=%s preservadas=%s", deleted, kept)
+    except Exception as exc:
+        logger.exception("[control.cleanup] Falha inesperada na task: %s", exc)
 
 
 async def _run_analyze_sync(limit: int | None) -> None:
@@ -204,6 +240,27 @@ def sync_ingest(
     _ = db
     background_tasks.add_task(_run_ingest_sync, source, limit)
     return {"detail": "Ingestao iniciada em background."}
+
+
+@router.post(
+    "/sync/cleanup-assertiveness",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Excluir vagas sem assertividade do banco",
+    description=(
+        "Remove do banco todas as vagas nao analisadas que nao atingem o minimo de "
+        "`threshold` termos unicos de include_keywords. "
+        "Vagas com status 'analyzed' sao preservadas."
+    ),
+    response_description="Confirmacao de que a limpeza foi enfileirada.",
+)
+def sync_cleanup_assertiveness(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_session),
+    threshold: int = Query(default=3, ge=1, description="Minimo de keywords unicas exigidas."),
+) -> dict[str, str]:
+    _ = db
+    background_tasks.add_task(_run_assertiveness_cleanup_sync, threshold)
+    return {"detail": "Limpeza de assertividade iniciada em background."}
 
 
 @router.post(

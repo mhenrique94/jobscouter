@@ -5,12 +5,12 @@ import dataclasses
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 import jobscouter.api.routes.control as control_route
 from jobscouter.api.deps import get_session
 from jobscouter.core.config import Settings
-from jobscouter.db.models import Job, JobStatus
+from jobscouter.db.models import FilterConfig, Job, JobStatus
 
 _BASE_SETTINGS = Settings(
     database_url="sqlite://",
@@ -249,3 +249,130 @@ def test_update_job_status_not_found(monkeypatch) -> None:
     )
     assert response.status_code == 404
     assert response.json()["detail"] == "Vaga nao encontrada."
+
+
+def _seed_filter_config(engine, include_keywords: list[str]) -> None:
+    with Session(engine) as session:
+        session.add(
+            FilterConfig(
+                id=1,
+                search_terms=[],
+                include_keywords=include_keywords,
+                exclude_keywords=[],
+            )
+        )
+        session.commit()
+
+
+def test_cleanup_assertiveness_exclui_vagas_sem_assertividade(monkeypatch) -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    _seed_filter_config(engine, include_keywords=["python", "fastapi", "django"])
+
+    with Session(engine) as session:
+        session.add_all(
+            [
+                Job(
+                    title="Python FastAPI Django Engineer",
+                    company="Acme",
+                    url="https://example.com/job/1",
+                    source="remoteok",
+                    description_raw="",
+                    status=JobStatus.pending,
+                ),
+                Job(
+                    title="Vendedor",
+                    company="Loja",
+                    url="https://example.com/job/2",
+                    source="remoteok",
+                    description_raw="Vaga comercial",
+                    status=JobStatus.pending,
+                ),
+            ]
+        )
+        session.commit()
+
+    monkeypatch.setattr(control_route, "engine", engine)
+    app = _build_app(engine)
+    client = TestClient(app)
+
+    response = client.post("/api/v1/control/sync/cleanup-assertiveness")
+
+    assert response.status_code == 202
+    with Session(engine) as session:
+        remaining = session.exec(select(Job)).all()
+    assert len(remaining) == 1
+    assert remaining[0].title == "Python FastAPI Django Engineer"
+
+
+def test_cleanup_assertiveness_preserva_vagas_analyzed(monkeypatch) -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    _seed_filter_config(engine, include_keywords=["python", "fastapi", "django"])
+
+    with Session(engine) as session:
+        session.add(
+            Job(
+                title="Vendedor",
+                company="Loja",
+                url="https://example.com/job/3",
+                source="remoteok",
+                description_raw="Vaga comercial sem keywords",
+                status=JobStatus.analyzed,
+            )
+        )
+        session.commit()
+
+    monkeypatch.setattr(control_route, "engine", engine)
+    app = _build_app(engine)
+    client = TestClient(app)
+
+    response = client.post("/api/v1/control/sync/cleanup-assertiveness")
+
+    assert response.status_code == 202
+    with Session(engine) as session:
+        remaining = session.exec(select(Job)).all()
+    assert len(remaining) == 1
+
+
+def test_cleanup_assertiveness_aceita_threshold_customizado(monkeypatch) -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(engine)
+    _seed_filter_config(engine, include_keywords=["python", "fastapi", "django"])
+
+    with Session(engine) as session:
+        session.add(
+            Job(
+                title="Python Developer",
+                company="Acme",
+                url="https://example.com/job/4",
+                source="remoteok",
+                description_raw="Uses FastAPI",
+                status=JobStatus.pending,
+            )
+        )
+        session.commit()
+
+    monkeypatch.setattr(control_route, "engine", engine)
+    app = _build_app(engine)
+    client = TestClient(app)
+
+    # threshold=2: "python" + "fastapi" = 2 matches → preserva
+    response = client.post("/api/v1/control/sync/cleanup-assertiveness?threshold=2")
+
+    assert response.status_code == 202
+    with Session(engine) as session:
+        remaining = session.exec(select(Job)).all()
+    assert len(remaining) == 1

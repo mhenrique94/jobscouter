@@ -131,6 +131,13 @@ export async function syncAnalyze(limit?: number): Promise<BackgroundTaskAccepte
   return response.data;
 }
 
+export async function cleanupAssertiveness(threshold = 3): Promise<BackgroundTaskAccepted> {
+  const response = await api.post<BackgroundTaskAccepted>("/control/sync/cleanup-assertiveness", null, {
+    params: { threshold },
+  });
+  return response.data;
+}
+
 export async function getLogs(lines = 200): Promise<LogsResponse> {
   const response = await api.get<LogsResponse>("/control/logs", { params: { lines } });
   return response.data;

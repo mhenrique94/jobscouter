@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  cleanupAssertiveness,
   getConfig,
   patchConfig,
   syncAnalyze,
@@ -56,6 +57,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [ingesting, setIngesting] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [cleaningUp, setCleaningUp] = useState(false);
 
   useEffect(() => {
     const loadConfig = async () => {
@@ -67,7 +69,7 @@ export default function SettingsPage() {
         setIncludeKeywords(listToLines(data.include_keywords));
         setExcludeKeywords(listToLines(data.exclude_keywords));
       } catch (error) {
-        toast.error(getRequestErrorMessage(error, "Nao foi possivel carregar as configuracoes."));
+        toast.error(getRequestErrorMessage(error, "Não foi possível carregar as configurações."));
       } finally {
         setLoading(false);
       }
@@ -91,9 +93,9 @@ export default function SettingsPage() {
       setSearchTerms(listToLines(updated.search_terms));
       setIncludeKeywords(listToLines(updated.include_keywords));
       setExcludeKeywords(listToLines(updated.exclude_keywords));
-      toast.success("Configuracoes salvas com sucesso.");
+      toast.success("Configurações salvas com sucesso.");
     } catch (error) {
-      toast.error(getRequestErrorMessage(error, "Falha ao salvar configuracoes."));
+      toast.error(getRequestErrorMessage(error, "Falha ao salvar configurações."));
     } finally {
       setSaving(false);
     }
@@ -103,9 +105,9 @@ export default function SettingsPage() {
     try {
       setIngesting(true);
       const response = await syncIngest();
-      toast.success(response.detail || "Ingestao aceita e iniciada em background.");
+      toast.success(response.detail || "Ingestão aceita e iniciada em background.");
     } catch (error) {
-      toast.error(getRequestErrorMessage(error, "Falha ao iniciar ingestao."));
+      toast.error(getRequestErrorMessage(error, "Falha ao iniciar ingestão."));
     } finally {
       setIngesting(false);
     }
@@ -115,11 +117,23 @@ export default function SettingsPage() {
     try {
       setAnalyzing(true);
       const response = await syncAnalyze();
-      toast.success(response.detail || "Analise IA aceita e iniciada em background.");
+      toast.success(response.detail || "Análise IA aceita e iniciada em background.");
     } catch (error) {
-      toast.error(getRequestErrorMessage(error, "Falha ao iniciar analise IA."));
+      toast.error(getRequestErrorMessage(error, "Falha ao iniciar análise IA."));
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const onCleanupAssertiveness = async () => {
+    try {
+      setCleaningUp(true);
+      const response = await cleanupAssertiveness();
+      toast.success(response.detail || "Limpeza iniciada em background.");
+    } catch (error) {
+      toast.error(getRequestErrorMessage(error, "Falha ao iniciar limpeza de assertividade."));
+    } finally {
+      setCleaningUp(false);
     }
   };
 
@@ -131,9 +145,9 @@ export default function SettingsPage() {
           <CardHeader className="gap-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <CardTitle className="text-xl md:text-2xl">Configuracoes de Filtros</CardTitle>
+                <CardTitle className="text-xl md:text-2xl">Configurações de Filtros</CardTitle>
                 <CardDescription>
-                  Ajuste search terms e palavras de inclusao/exclusao para as proximas sincronizacoes.
+                  Ajuste search terms e palavras de inclusão/exclusão para as próximas sincronizações.
                 </CardDescription>
               </div>
               <Button type="button" variant="outline" onClick={() => router.push("/")}>
@@ -145,16 +159,43 @@ export default function SettingsPage() {
 
         <Card className="border border-border/60">
           <CardHeader>
-            <CardTitle className="text-base">Formulario de Configuracao</CardTitle>
+            <CardTitle className="text-base">Manutenção do Banco</CardTitle>
+            <CardDescription>
+              Ações de limpeza aplicadas sobre as vagas já persistidas.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-md border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+              <strong>Limpeza de assertividade:</strong> remove permanentemente do banco todas as
+              vagas <em>não analisadas</em> (pending, ready_for_ai, discarded) que não contenham ao
+              menos 3 termos únicos das suas <code>include_keywords</code>. Vagas com status{" "}
+              <em>analyzed</em> são preservadas. A operação roda em background e não pode ser
+              desfeita.
+            </div>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void onCleanupAssertiveness()}
+              disabled={cleaningUp}
+            >
+              {cleaningUp ? <Loader2 className="animate-spin" /> : null}
+              Limpar vagas sem assertividade
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="border border-border/60">
+          <CardHeader>
+            <CardTitle className="text-base">Formulário de Configuração</CardTitle>
             <CardDescription>Use um termo por linha em cada campo.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             {loading ? (
-              <p className="text-sm text-muted-foreground">Carregando configuracoes...</p>
+              <p className="text-sm text-muted-foreground">Carregando configurações...</p>
             ) : null}
 
             {!loading && !hasLoadedConfig ? (
-              <p className="text-sm text-destructive">Nao foi possivel carregar a configuracao atual.</p>
+              <p className="text-sm text-destructive">Não foi possível carregar a configuração atual.</p>
             ) : null}
 
             {!loading && hasLoadedConfig ? (
@@ -198,7 +239,7 @@ export default function SettingsPage() {
                 <div className="flex flex-wrap gap-2">
                   <Button type="button" onClick={onSave} disabled={saving}>
                     {saving ? <Loader2 className="animate-spin" /> : null}
-                    Salvar Configuracoes
+                    Salvar Configurações
                   </Button>
                   <Button type="button" variant="outline" onClick={onSyncIngest} disabled={ingesting}>
                     {ingesting ? <Loader2 className="animate-spin" /> : null}
@@ -206,7 +247,7 @@ export default function SettingsPage() {
                   </Button>
                   <Button type="button" variant="secondary" onClick={onSyncAnalyze} disabled={analyzing}>
                     {analyzing ? <Loader2 className="animate-spin" /> : null}
-                    Rodar Analise IA
+                    Rodar Análise IA
                   </Button>
                 </div>
               </>
