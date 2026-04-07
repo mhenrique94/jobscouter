@@ -46,9 +46,14 @@ class AIAnalyzerService:
         "models/gemini-2.5-flash",
         "gemini-2.5-flash",
     )
-    # Keywords que indicam cargo não-dev — verificadas apenas no título,
-    # pois podem aparecer legitimamente na descrição de empresas da área de dados.
-    TITLE_ONLY_NON_DEV_KEYWORDS: tuple[str, ...] = (
+    # Keywords verificadas apenas no título da vaga.
+    # A descrição pode mencionar qualquer um desses termos como contexto da empresa
+    # (ex: "nossa plataforma de vendas", "ferramentas de data science") sem que isso
+    # indique que o cargo em si é fora de desenvolvimento de software.
+    NON_DEV_KEYWORDS: tuple[str, ...] = (
+        "contador",
+        "contabil",
+        "contabilidade",
         "data science",
         "cientista de dados",
         "data scientist",
@@ -59,12 +64,6 @@ class AIAnalyzerService:
         "business intelligence",
         "bi analyst",
         "analista bi",
-    )
-    # Keywords inequivocamente de outros domínios — verificadas no texto completo.
-    FULL_TEXT_NON_DEV_KEYWORDS: tuple[str, ...] = (
-        "contador",
-        "contabil",
-        "contabilidade",
         "vendedor",
         "vendas",
         "sales",
@@ -111,7 +110,7 @@ class AIAnalyzerService:
         self.model = self.genai.GenerativeModel(self._model_candidates[self._model_index])
 
     async def analyze_job(self, job: Job) -> AIAnalysisResult:
-        matched_keywords = self._is_non_dev_job(job.title, job.description_raw)
+        matched_keywords = self._is_non_dev_job(job.title)
         if matched_keywords:
             keywords_str = ", ".join(f"'{kw}'" for kw in matched_keywords)
             return AIAnalysisResult(
@@ -313,17 +312,9 @@ class AIAnalyzerService:
                 return summary[:1000]
         return "Resumo indisponivel."
 
-    def _is_non_dev_job(self, title: str, description: str) -> list[str]:
+    def _is_non_dev_job(self, title: str) -> list[str]:
         title_text = title.casefold()
-        full_text = f"{title}\n{description}".casefold()
-
-        matched = [
-            kw for kw in self.TITLE_ONLY_NON_DEV_KEYWORDS if self._contains_keyword(title_text, kw)
-        ]
-        matched += [
-            kw for kw in self.FULL_TEXT_NON_DEV_KEYWORDS if self._contains_keyword(full_text, kw)
-        ]
-        return matched
+        return [kw for kw in self.NON_DEV_KEYWORDS if self._contains_keyword(title_text, kw)]
 
     def _contains_keyword(self, text: str, keyword: str) -> bool:
         # Use word boundaries to avoid substring false positives (e.g. "acquired" -> "ui").
