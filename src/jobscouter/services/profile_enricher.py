@@ -222,7 +222,12 @@ class ProfileEnricher:
             raise ValueError("Resposta do Gemini nao contem JSON valido na expansao de perfil.")
 
         snippet = response_text[start : end + 1]
-        parsed = json.loads(snippet)
+        try:
+            parsed = json.loads(snippet)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"Resposta do Gemini contem JSON malformado na expansao de perfil: {exc}"
+            ) from exc
         if not isinstance(parsed, dict):
             raise ValueError("JSON retornado pelo Gemini nao e um objeto.")
         return parsed

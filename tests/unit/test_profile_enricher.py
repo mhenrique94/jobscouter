@@ -193,6 +193,15 @@ def test_parse_json_response_raises_on_no_json(monkeypatch) -> None:
         enricher._parse_json_response("sem json aqui")
 
 
+def test_parse_json_response_raises_value_error_on_malformed_snippet(monkeypatch) -> None:
+    fake_model = _FakeModel()
+    _configure_fake_google(monkeypatch, fake_model)
+
+    enricher = ProfileEnricher(settings=_settings())
+    with pytest.raises(ValueError, match="malformado"):
+        enricher._parse_json_response("prefixo {chave_sem_aspas: valor} sufixo")
+
+
 def test_parse_json_response_raises_on_non_dict(monkeypatch) -> None:
     fake_model = _FakeModel()
     _configure_fake_google(monkeypatch, fake_model)
