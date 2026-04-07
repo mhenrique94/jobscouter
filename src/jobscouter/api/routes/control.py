@@ -18,7 +18,7 @@ from jobscouter.scrapers.remoteok import RemoteOKScraper
 from jobscouter.services.analyzer import AIAnalyzerService
 from jobscouter.services.filter import FilterConfigService, validate_job_assertiveness
 from jobscouter.services.ingestion import IngestionStats, JobIngestionService
-from jobscouter.services.profile_enricher import EnrichedProfile, build_enriched_profile
+from jobscouter.services.profile_enricher import get_effective_search_terms
 
 router = APIRouter(tags=["control"])
 
@@ -49,35 +49,11 @@ async def _run_ingest_sync(source: str, limit: int) -> None:
 
         search_terms = list(filter_config.search_terms) or [""]
 
-        enriched_profile: EnrichedProfile | None = None
-        if not settings.gemini_api_key:
-            logger.warning("GEMINI_API_KEY nao configurada; expansao de perfil desativada.")
-        else:
-            try:
-                enriched_profile = await build_enriched_profile(
-                    include_keywords=search_terms,
-                    exclude_keywords=list(filter_config.exclude_keywords),
-                    settings=settings,
-                )
-                logger.info(
-                    "[control.ingest] Expansao de perfil concluida: %s originais, %s expandidos, %s adicionados pela IA.",
-                    len(enriched_profile.original_keywords),
-                    len(enriched_profile.expanded_keywords),
-                    len(enriched_profile.added_by_ai),
-                )
-            except Exception as exc:
-                logger.warning(
-                    "[control.ingest] Falha ao expandir perfil via IA; usando keywords estaticas. Erro: %s",
-                    exc,
-                )
-
-        effective_search_terms = (
-            list(enriched_profile.expanded_keywords)
-            if enriched_profile is not None
-            else search_terms
-        )
-        expanded_set = (
-            set(enriched_profile.expanded_keywords) if enriched_profile is not None else None
+        effective_search_terms, expanded_set = await get_effective_search_terms(
+            search_terms=search_terms,
+            exclude_keywords=list(filter_config.exclude_keywords),
+            settings=settings,
+            logger=logger,
         )
 
         async with httpx.AsyncClient(

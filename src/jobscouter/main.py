@@ -15,7 +15,7 @@ from jobscouter.scrapers.remotar import RemotarScraper
 from jobscouter.scrapers.remoteok import RemoteOKScraper
 from jobscouter.services.filter import FilterConfigService
 from jobscouter.services.ingestion import IngestionStats, JobIngestionService
-from jobscouter.services.profile_enricher import EnrichedProfile, build_enriched_profile
+from jobscouter.services.profile_enricher import get_effective_search_terms
 
 
 def _positive_int(value: str) -> int:
@@ -62,31 +62,14 @@ async def run_ingestion(
         logger.warning("Nenhum termo de busca configurado; executando sem termo explicito.")
         search_terms = [""]
 
-    enriched_profile: EnrichedProfile | None = None
-    if not settings.gemini_api_key:
-        logger.warning("GEMINI_API_KEY nao configurada; expansao de perfil desativada.")
-    else:
-        with session_scope() as session:
-            filter_config = FilterConfigService(session).get_active_config()
-        try:
-            enriched_profile = await build_enriched_profile(
-                include_keywords=search_terms,
-                exclude_keywords=list(filter_config.exclude_keywords),
-                settings=settings,
-            )
-            logger.info(
-                "Expansao de perfil concluida: %s originais, %s expandidos, %s adicionados pela IA.",
-                len(enriched_profile.original_keywords),
-                len(enriched_profile.expanded_keywords),
-                len(enriched_profile.added_by_ai),
-            )
-        except Exception as exc:
-            logger.warning(
-                "Falha ao expandir perfil via IA; usando keywords estaticas. Erro: %s", exc
-            )
+    with session_scope() as session:
+        filter_config = FilterConfigService(session).get_active_config()
 
-    effective_search_terms = (
-        list(enriched_profile.expanded_keywords) if enriched_profile is not None else search_terms
+    effective_search_terms, expanded_set = await get_effective_search_terms(
+        search_terms=search_terms,
+        exclude_keywords=list(filter_config.exclude_keywords),
+        settings=settings,
+        logger=logger,
     )
 
     async with httpx.AsyncClient(
@@ -144,11 +127,6 @@ async def run_ingestion(
                             keyword=term,
                             checkpoint_date=checkpoint_date,
                         )
-                        expanded_set = (
-                            set(enriched_profile.expanded_keywords)
-                            if enriched_profile is not None
-                            else None
-                        )
                         stats = await ingestion_service.ingest_jobs(
                             jobs, expanded_keywords=expanded_set
                         )
@@ -157,7 +135,7 @@ async def run_ingestion(
                         logger.info("[%s][%s] %s", selected_source, term, stats.to_pretty_line())
                         new_or_updated_in_cycle += stats.inserted + stats.updated
 
-                        if term_index < len(search_terms) - 1:
+                        if term_index < len(effective_search_terms) - 1:
                             await asyncio.sleep(2)
 
                     per_source_stats[selected_source] = source_stats

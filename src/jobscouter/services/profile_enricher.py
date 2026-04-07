@@ -58,6 +58,12 @@ class ProfileEnricher:
         include_keywords: list[str],
         exclude_keywords: list[str],
     ) -> EnrichedProfile:
+        include_keywords = list(
+            dict.fromkeys(kw for kw in (k.strip() for k in include_keywords) if kw)
+        )
+        exclude_keywords = list(
+            dict.fromkeys(kw for kw in (k.strip() for k in exclude_keywords) if kw)
+        )
         if not include_keywords:
             return EnrichedProfile(original_keywords=(), expanded_keywords=(), added_by_ai=())
 
@@ -75,7 +81,7 @@ class ProfileEnricher:
             await asyncio.sleep(delay)
             response_text = await self._generate_json_response(prompt)
 
-        return self._parse_enriched_profile(response_text, include_keywords)
+        return self._parse_enriched_profile(response_text, include_keywords, exclude_keywords)
 
     def _build_prompt(
         self,
@@ -111,6 +117,7 @@ class ProfileEnricher:
         self,
         response_text: str,
         original_keywords: list[str],
+        exclude_keywords: list[str],
     ) -> EnrichedProfile:
         payload = self._parse_json_response(response_text)
         raw = payload.get("expanded_keywords", [])
@@ -120,9 +127,18 @@ class ProfileEnricher:
         ai_suggestions = [item.strip() for item in raw if isinstance(item, str) and item.strip()]
 
         original_lower = {kw.casefold() for kw in original_keywords}
-        added_by_ai = [kw for kw in ai_suggestions if kw.casefold() not in original_lower]
+        exclude_lower = {kw.casefold() for kw in exclude_keywords}
+        added_by_ai = [
+            kw
+            for kw in ai_suggestions
+            if kw.casefold() not in original_lower and kw.casefold() not in exclude_lower
+        ]
 
-        expanded_keywords = list(dict.fromkeys([*original_keywords, *added_by_ai]))
+        seen: dict[str, str] = {}
+        for kw in [*original_keywords, *added_by_ai]:
+            if kw.casefold() not in seen:
+                seen[kw.casefold()] = kw
+        expanded_keywords = list(seen.values())
 
         if added_by_ai:
             self.logger.info(
@@ -219,3 +235,38 @@ async def build_enriched_profile(
 ) -> EnrichedProfile:
     enricher = ProfileEnricher(settings=settings)
     return await enricher.enrich(include_keywords, exclude_keywords)
+
+
+async def get_effective_search_terms(
+    search_terms: list[str],
+    exclude_keywords: list[str],
+    settings: Settings | None = None,
+    logger: Any = None,
+) -> tuple[list[str], set[str] | None]:
+    """Tenta expandir search_terms via IA e retorna (effective_search_terms, expanded_set).
+
+    Em caso de falha ou sem GEMINI_API_KEY, retorna os search_terms originais e None.
+    """
+    _settings = settings or get_settings()
+    _logger = logger or get_logger("jobscouter.services.profile_enricher")
+
+    if not _settings.gemini_api_key:
+        _logger.warning("GEMINI_API_KEY nao configurada; expansao de perfil desativada.")
+        return search_terms, None
+
+    try:
+        enriched = await build_enriched_profile(
+            include_keywords=search_terms,
+            exclude_keywords=exclude_keywords,
+            settings=_settings,
+        )
+        _logger.info(
+            "Expansao de perfil concluida: %s originais, %s expandidos, %s adicionados pela IA.",
+            len(enriched.original_keywords),
+            len(enriched.expanded_keywords),
+            len(enriched.added_by_ai),
+        )
+        return list(enriched.expanded_keywords), set(enriched.expanded_keywords)
+    except Exception as exc:
+        _logger.warning("Falha ao expandir perfil via IA; usando keywords estaticas. Erro: %s", exc)
+        return search_terms, None

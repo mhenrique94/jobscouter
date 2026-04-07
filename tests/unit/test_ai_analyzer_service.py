@@ -260,6 +260,49 @@ async def test_non_dev_correlated_role_returns_zero_without_model_call(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_data_science_in_description_does_not_block_dev_role(monkeypatch) -> None:
+    """Vaga de dev cujo título não menciona data science não deve ser barrada
+    apenas porque a descrição da empresa faz referência contextual ao termo."""
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    fake_model = _FakeModel(texts=['{"score": 8, "summary": "Boa aderencia"}'])
+    _configure_fake_google_modules(monkeypatch, fake_model)
+
+    with Session(engine) as session:
+        service = AIAnalyzerService(session, settings=_settings())
+        result = await service.analyze_job(
+            _build_job(
+                "Fullstack Software Engineer Core",
+                "Our platform connects many data science technologies and tools.",
+            )
+        )
+
+    assert result.score == 8
+    assert fake_model.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_data_science_in_title_still_blocks_job(monkeypatch) -> None:
+    """Vaga com 'data science' no título ainda deve ser barrada."""
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    fake_model = _FakeModel()
+    _configure_fake_google_modules(monkeypatch, fake_model)
+
+    with Session(engine) as session:
+        service = AIAnalyzerService(session, settings=_settings())
+        result = await service.analyze_job(
+            _build_job("Data Science Engineer", "Modelagem e experimentos em larga escala.")
+        )
+
+    assert result.score == 0
+    assert "fora de desenvolvimento" in result.summary
+    assert fake_model.calls == 0
+
+
+@pytest.mark.asyncio
 async def test_non_dev_sales_keyword_does_not_match_inside_salesforce(monkeypatch) -> None:
     engine = create_engine("sqlite://")
     SQLModel.metadata.create_all(engine)

@@ -46,10 +46,9 @@ class AIAnalyzerService:
         "models/gemini-2.5-flash",
         "gemini-2.5-flash",
     )
-    NON_DEV_KEYWORDS: tuple[str, ...] = (
-        "contador",
-        "contabil",
-        "contabilidade",
+    # Keywords que indicam cargo não-dev — verificadas apenas no título,
+    # pois podem aparecer legitimamente na descrição de empresas da área de dados.
+    TITLE_ONLY_NON_DEV_KEYWORDS: tuple[str, ...] = (
         "data science",
         "cientista de dados",
         "data scientist",
@@ -60,6 +59,12 @@ class AIAnalyzerService:
         "business intelligence",
         "bi analyst",
         "analista bi",
+    )
+    # Keywords inequivocamente de outros domínios — verificadas no texto completo.
+    FULL_TEXT_NON_DEV_KEYWORDS: tuple[str, ...] = (
+        "contador",
+        "contabil",
+        "contabilidade",
         "vendedor",
         "vendas",
         "sales",
@@ -309,8 +314,16 @@ class AIAnalyzerService:
         return "Resumo indisponivel."
 
     def _is_non_dev_job(self, title: str, description: str) -> list[str]:
-        text = f"{title}\n{description}".casefold()
-        return [kw for kw in self.NON_DEV_KEYWORDS if self._contains_keyword(text, kw)]
+        title_text = title.casefold()
+        full_text = f"{title}\n{description}".casefold()
+
+        matched = [
+            kw for kw in self.TITLE_ONLY_NON_DEV_KEYWORDS if self._contains_keyword(title_text, kw)
+        ]
+        matched += [
+            kw for kw in self.FULL_TEXT_NON_DEV_KEYWORDS if self._contains_keyword(full_text, kw)
+        ]
+        return matched
 
     def _contains_keyword(self, text: str, keyword: str) -> bool:
         # Use word boundaries to avoid substring false positives (e.g. "acquired" -> "ui").
