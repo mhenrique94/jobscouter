@@ -18,6 +18,7 @@ from jobscouter.scrapers.remoteok import RemoteOKScraper
 from jobscouter.services.analyzer import AIAnalyzerService
 from jobscouter.services.filter import FilterConfigService, validate_job_assertiveness
 from jobscouter.services.ingestion import IngestionStats, JobIngestionService
+from jobscouter.services.profile_enricher import EnrichedProfile, build_enriched_profile
 
 router = APIRouter(tags=["control"])
 
@@ -43,6 +44,42 @@ async def _run_ingest_sync(source: str, limit: int) -> None:
         "[control.ingest] Iniciando ingestao em background | source=%s limit=%s", source, limit
     )
     try:
+        with Session(engine) as session:
+            filter_config = FilterConfigService(session).get_active_config()
+
+        search_terms = list(filter_config.search_terms) or [""]
+
+        enriched_profile: EnrichedProfile | None = None
+        if not settings.gemini_api_key:
+            logger.warning("GEMINI_API_KEY nao configurada; expansao de perfil desativada.")
+        else:
+            try:
+                enriched_profile = await build_enriched_profile(
+                    include_keywords=search_terms,
+                    exclude_keywords=list(filter_config.exclude_keywords),
+                    settings=settings,
+                )
+                logger.info(
+                    "[control.ingest] Expansao de perfil concluida: %s originais, %s expandidos, %s adicionados pela IA.",
+                    len(enriched_profile.original_keywords),
+                    len(enriched_profile.expanded_keywords),
+                    len(enriched_profile.added_by_ai),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[control.ingest] Falha ao expandir perfil via IA; usando keywords estaticas. Erro: %s",
+                    exc,
+                )
+
+        effective_search_terms = (
+            list(enriched_profile.expanded_keywords)
+            if enriched_profile is not None
+            else search_terms
+        )
+        expanded_set = (
+            set(enriched_profile.expanded_keywords) if enriched_profile is not None else None
+        )
+
         async with httpx.AsyncClient(
             headers={"User-Agent": settings.user_agent},
             timeout=settings.request_timeout,
@@ -57,29 +94,34 @@ async def _run_ingest_sync(source: str, limit: int) -> None:
             total_stats = IngestionStats()
 
             for selected_source in selected_sources:
-                with Session(engine) as session:
-                    service = JobIngestionService(session=session)
-                    try:
-                        checkpoint_date = service.get_latest_job_date(selected_source)
-                        jobs = await scrapers[selected_source].fetch_jobs(
-                            limit=limit,
-                            max_pages=None,
-                            keyword=None,
-                            checkpoint_date=checkpoint_date,
-                        )
-                        stats = await service.ingest_jobs(jobs)
-                        session.commit()
-                        total_stats.add(stats)
-                        logger.info(
-                            "[control.ingest] Fonte=%s | %s",
-                            selected_source,
-                            stats.to_pretty_line(),
-                        )
-                    except Exception as exc:
-                        session.rollback()
-                        logger.exception(
-                            "[control.ingest] Falha na fonte %s: %s", selected_source, exc
-                        )
+                for term in effective_search_terms:
+                    with Session(engine) as session:
+                        service = JobIngestionService(session=session)
+                        try:
+                            checkpoint_date = service.get_latest_job_date(selected_source)
+                            jobs = await scrapers[selected_source].fetch_jobs(
+                                limit=limit,
+                                max_pages=None,
+                                keyword=term,
+                                checkpoint_date=checkpoint_date,
+                            )
+                            stats = await service.ingest_jobs(jobs, expanded_keywords=expanded_set)
+                            session.commit()
+                            total_stats.add(stats)
+                            logger.info(
+                                "[control.ingest] Fonte=%s termo='%s' | %s",
+                                selected_source,
+                                term,
+                                stats.to_pretty_line(),
+                            )
+                        except Exception as exc:
+                            session.rollback()
+                            logger.exception(
+                                "[control.ingest] Falha na fonte %s termo='%s': %s",
+                                selected_source,
+                                term,
+                                exc,
+                            )
 
             logger.info("[control.ingest] Concluido | %s", total_stats.to_pretty_line())
     except Exception as exc:

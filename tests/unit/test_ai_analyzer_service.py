@@ -198,7 +198,10 @@ filters:
     assert "[VETO - Localizacao]" in prompt
     assert "REGRAS DE VETO DE FUNCAO:" in prompt
     assert "Software Development / Engineering" in prompt
-    assert "Atribua nota de 1 a 10 usando include_keywords (Python, Django, Vue)" in prompt
+    assert (
+        "PASSO 1 - Liste quais include_keywords (Python, Django, Vue) aparecem LITERALMENTE"
+        in prompt
+    )
     assert '"score"' in prompt and '"summary"' in prompt
 
 

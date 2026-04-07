@@ -54,9 +54,17 @@ class JobIngestionService:
         self.logger = get_logger("jobscouter.services.ingestion")
         self.filter_service = JobFilterService(session)
 
-    async def ingest_jobs(self, jobs: list[JobPayload]) -> IngestionStats:
+    async def ingest_jobs(
+        self,
+        jobs: list[JobPayload],
+        expanded_keywords: set[str] | None = None,
+    ) -> IngestionStats:
         stats = IngestionStats()
-        keywords: set[str] = set(self.filter_service.rules.include_keywords)
+        keywords: set[str] = (
+            expanded_keywords
+            if expanded_keywords is not None
+            else set(self.filter_service.rules.include_keywords)
+        )
 
         for payload in jobs:
             try:
