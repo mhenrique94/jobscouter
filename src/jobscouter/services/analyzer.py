@@ -16,8 +16,17 @@ from jobscouter.core.logging import get_logger
 from jobscouter.db.models import Job
 from jobscouter.services.filter import JobFilterService
 
-PROFILE_TEXT = "Full-stack Developer, Python (Django), Vue.js, PostgreSQL, Linux, Nível Pleno"
 CANDIDATE_LOCATION_TEXT = "Brasil"
+
+LEVEL_NORMALIZATION: dict[str, str] = {
+    "junior": "Junior",
+    "júnior": "Junior",
+    "pleno": "Pleno",
+    "mid-level": "Pleno",
+    "senior": "Senior",
+    "sênior": "Senior",
+    "sénior": "Senior",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,7 +69,10 @@ class AIAnalyzerService:
         "designer",
         "design grafico",
         "marketing",
-        "growth",
+        "growth hacker",
+        "growth marketing",
+        "head of growth",
+        "growth manager",
     )
 
     def __init__(
@@ -94,10 +106,12 @@ class AIAnalyzerService:
         self.model = self.genai.GenerativeModel(self._model_candidates[self._model_index])
 
     async def analyze_job(self, job: Job) -> AIAnalysisResult:
-        if self._is_non_dev_job(job.title, job.description_raw):
+        matched_keywords = self._is_non_dev_job(job.title, job.description_raw)
+        if matched_keywords:
+            keywords_str = ", ".join(f"'{kw}'" for kw in matched_keywords)
             return AIAnalysisResult(
                 score=0,
-                summary="Vaga fora de desenvolvimento de software (classificacao local).",
+                summary=f"Vaga fora de desenvolvimento de software (classificacao local). Keyword(s) detectada(s): {keywords_str}.",
             )
 
         prompt = self._build_prompt(job)
@@ -190,15 +204,37 @@ class AIAnalyzerService:
             normalized = normalized[len("models/") :]
         return normalized in self.LOW_COST_MODEL_FAMILIES
 
+    def _detect_candidate_level(self) -> str | None:
+        levels = {
+            LEVEL_NORMALIZATION[kw.casefold().strip()]
+            for kw in self.filter_rules.include_keywords
+            if kw.casefold().strip() in LEVEL_NORMALIZATION
+        }
+        return levels.pop() if len(levels) == 1 else None
+
+    def _build_nivel_rules(self, candidate_level: str) -> str:
+        return (
+            "REGRAS DE NIVEL:\n"
+            "Hierarquia de senioridade (menor para maior): Junior < Pleno < Senior/Sênior.\n"
+            f"Nivel-alvo do candidato: {candidate_level}\n"
+            "1. Identifique os niveis mencionados na vaga (titulo + descricao). Reconheca: Junior, Júnior, Pleno, Mid-level, Senior, Sênior, e combinacoes como 'Pleno/Senior' ou 'Junior/Pleno'.\n"
+            f"2. Se a vaga contiver o nivel-alvo ({candidate_level}) entre os niveis mencionados → sem ajuste de nivel.\n"
+            f"3. Se a vaga mencionar APENAS niveis ACIMA do nivel-alvo ({candidate_level}) → reduza 1 ponto do score por nivel de distancia na hierarquia.\n"
+            f"   Exemplo: candidato e {candidate_level}, vaga e apenas Senior → -1pt.\n"
+            f"4. Se a vaga mencionar APENAS niveis ABAIXO do nivel-alvo ({candidate_level}) e nao contiver o nivel-alvo → score deve ser 0 e o summary deve comecar com [VETO - Nivel].\n"
+            "5. Se a vaga nao mencionar nenhum nivel explicito → sem ajuste de nivel.\n"
+        )
+
     def _build_prompt(self, job: Job) -> str:
         description = (job.description_raw or "").strip()
         include_keywords = self._format_keywords(self.filter_rules.include_keywords)
         exclude_keywords = self._format_keywords(self.filter_rules.exclude_keywords)
+        candidate_level = self._detect_candidate_level()
+        nivel_rules = self._build_nivel_rules(candidate_level) if candidate_level else ""
         return (
             "Voce e um Tech Sourcer. Avalie a vaga abaixo comparando-a com as preferencias do candidato. Responda SEMPRE em portugues do Brasil.\n\n"
             f"TECNOLOGIAS DESEJADAS (CORE STACK): {include_keywords}\n"
-            f"TECNOLOGIAS/TERMOS A EVITAR: {exclude_keywords}\n"
-            f"PERFIL ALVO COMPLEMENTAR: {PROFILE_TEXT}\n\n"
+            f"TECNOLOGIAS/TERMOS A EVITAR: {exclude_keywords}\n\n"
             f"LOCALIZACAO DO CANDIDATO: {CANDIDATE_LOCATION_TEXT}\n\n"
             "INSTRUCOES:\n"
             "REGRAS DE VETO DE LOCALIZACAO (prioridade maxima):\n"
@@ -211,7 +247,8 @@ class AIAnalyzerService:
             "REGRAS DE VETO DE FUNCAO:\n"
             "- Se a vaga for de area correlata mas nao identica (Data Science, Data Engineering puro, BI, Analytics, Marketing, Sales e correlatas), o score deve ser 0.\n"
             "- O foco exclusivo e Software Development / Engineering.\n"
-            "REGRAS DE PONTUACAO (MATCH):\n"
+            + nivel_rules
+            + "REGRAS DE PONTUACAO (MATCH):\n"
             "Siga este processo em ordem:\n"
             f"PASSO 1 - Liste quais include_keywords ({include_keywords}) aparecem LITERALMENTE no texto da vaga (titulo + descricao).\n"
             f"PASSO 2 - Para include_keywords NAO encontradas no texto, avalie se voce tem conhecimento externo confiavel de que a empresa ou produto usa essa tecnologia (ex: saber que determinada empresa usa Django). Liste separadamente como 'inferido (conhecimento externo)'.\n"
@@ -271,9 +308,9 @@ class AIAnalyzerService:
                 return summary[:1000]
         return "Resumo indisponivel."
 
-    def _is_non_dev_job(self, title: str, description: str) -> bool:
+    def _is_non_dev_job(self, title: str, description: str) -> list[str]:
         text = f"{title}\n{description}".casefold()
-        return any(self._contains_keyword(text, keyword) for keyword in self.NON_DEV_KEYWORDS)
+        return [kw for kw in self.NON_DEV_KEYWORDS if self._contains_keyword(text, kw)]
 
     def _contains_keyword(self, text: str, keyword: str) -> bool:
         # Use word boundaries to avoid substring false positives (e.g. "acquired" -> "ui").
