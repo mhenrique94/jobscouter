@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -70,11 +71,20 @@ async def _run_ingest_sync(source: str, limit: int) -> None:
             total_stats = IngestionStats()
 
             for selected_source in selected_sources:
-                for term in effective_search_terms:
+                with Session(engine) as ck_session:
+                    checkpoint_date = JobIngestionService(session=ck_session).get_latest_job_date(
+                        selected_source
+                    )
+                logger.info(
+                    "[control.ingest] Fonte=%s | checkpoint=%s",
+                    selected_source,
+                    checkpoint_date.isoformat() if checkpoint_date else "nenhum",
+                )
+
+                for term_index, term in enumerate(effective_search_terms):
                     with Session(engine) as session:
                         service = JobIngestionService(session=session)
                         try:
-                            checkpoint_date = service.get_latest_job_date(selected_source)
                             jobs = await scrapers[selected_source].fetch_jobs(
                                 limit=limit,
                                 max_pages=None,
@@ -98,6 +108,9 @@ async def _run_ingest_sync(source: str, limit: int) -> None:
                                 term,
                                 exc,
                             )
+
+                    if term_index < len(effective_search_terms) - 1:
+                        await asyncio.sleep(2)
 
             logger.info("[control.ingest] Concluido | %s", total_stats.to_pretty_line())
     except Exception as exc:

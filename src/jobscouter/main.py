@@ -106,16 +106,14 @@ async def run_ingestion(
                 ingestion_service = JobIngestionService(session)
                 for selected_source in selected_sources:
                     source_stats = IngestionStats()
+                    checkpoint_date = ingestion_service.get_latest_job_date(selected_source)
+                    if checkpoint_date is not None:
+                        logger.info(
+                            "[%s] Checkpoint encontrado: %s. Vagas anteriores a esta data serao ignoradas.",
+                            selected_source,
+                            checkpoint_date.isoformat(),
+                        )
                     for term_index, term in enumerate(effective_search_terms):
-                        checkpoint_date = ingestion_service.get_latest_job_date(selected_source)
-                        if checkpoint_date is not None:
-                            logger.info(
-                                "[%s][%s] Checkpoint encontrado: %s. Vagas antigas serao ignoradas.",
-                                selected_source,
-                                term,
-                                checkpoint_date.isoformat(),
-                            )
-
                         logger.info(
                             "[Ingestion] Buscando vagas para o termo: '%s' na fonte '%s'...",
                             term,

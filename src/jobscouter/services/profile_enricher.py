@@ -134,6 +134,16 @@ class ProfileEnricher:
             if kw.casefold() not in original_lower and kw.casefold() not in exclude_lower
         ]
 
+        _MAX_AI_PER_TERM = 3
+        max_total = len(original_keywords) * _MAX_AI_PER_TERM
+        if len(added_by_ai) > max_total:
+            self.logger.warning(
+                "IA retornou %d sugestoes (limite=%d). Truncando.",
+                len(added_by_ai),
+                max_total,
+            )
+            added_by_ai = added_by_ai[:max_total]
+
         seen: dict[str, str] = {}
         for kw in [*original_keywords, *added_by_ai]:
             if kw.casefold() not in seen:
