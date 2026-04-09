@@ -49,7 +49,7 @@ async def _run_ingest_sync(source: str, limit: int) -> None:
 
         search_terms = list(filter_config.search_terms) or [""]
 
-        effective_search_terms, expanded_set = await get_effective_search_terms(
+        effective_search_terms = await get_effective_search_terms(
             search_terms=search_terms,
             exclude_keywords=list(filter_config.exclude_keywords),
             settings=settings,
@@ -81,7 +81,7 @@ async def _run_ingest_sync(source: str, limit: int) -> None:
                                 keyword=term,
                                 checkpoint_date=checkpoint_date,
                             )
-                            stats = await service.ingest_jobs(jobs, expanded_keywords=expanded_set)
+                            stats = await service.ingest_jobs(jobs)
                             session.commit()
                             total_stats.add(stats)
                             logger.info(

@@ -65,7 +65,7 @@ async def run_ingestion(
     with session_scope() as session:
         filter_config = FilterConfigService(session).get_active_config()
 
-    effective_search_terms, expanded_set = await get_effective_search_terms(
+    effective_search_terms = await get_effective_search_terms(
         search_terms=search_terms,
         exclude_keywords=list(filter_config.exclude_keywords),
         settings=settings,
@@ -127,9 +127,7 @@ async def run_ingestion(
                             keyword=term,
                             checkpoint_date=checkpoint_date,
                         )
-                        stats = await ingestion_service.ingest_jobs(
-                            jobs, expanded_keywords=expanded_set
-                        )
+                        stats = await ingestion_service.ingest_jobs(jobs)
                         source_stats.add(stats)
                         cycle_stats.add(stats)
                         logger.info("[%s][%s] %s", selected_source, term, stats.to_pretty_line())

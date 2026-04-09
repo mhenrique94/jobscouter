@@ -247,17 +247,19 @@ async def get_effective_search_terms(
     exclude_keywords: list[str],
     settings: Settings | None = None,
     logger: Any = None,
-) -> tuple[list[str], set[str] | None]:
-    """Tenta expandir search_terms via IA e retorna (effective_search_terms, expanded_set).
+) -> list[str]:
+    """Tenta expandir search_terms via IA e retorna os termos efetivos para consulta ao scraper.
 
-    Em caso de falha ou sem GEMINI_API_KEY, retorna os search_terms originais e None.
+    Em caso de falha ou sem GEMINI_API_KEY, retorna os search_terms originais.
+    Nota: esta função serve exclusivamente para determinar os termos de busca do scraper.
+    A validação de assertividade usa filter_config.include_keywords diretamente.
     """
     _settings = settings or get_settings()
     _logger = logger or get_logger("jobscouter.services.profile_enricher")
 
     if not _settings.gemini_api_key:
         _logger.warning("GEMINI_API_KEY nao configurada; expansao de perfil desativada.")
-        return search_terms, None
+        return search_terms
 
     try:
         enriched = await build_enriched_profile(
@@ -271,7 +273,8 @@ async def get_effective_search_terms(
             len(enriched.expanded_keywords),
             len(enriched.added_by_ai),
         )
-        return list(enriched.expanded_keywords), set(enriched.expanded_keywords)
+        expanded = list(enriched.expanded_keywords)
+        return expanded if expanded else search_terms
     except Exception as exc:
         _logger.warning("Falha ao expandir perfil via IA; usando keywords estaticas. Erro: %s", exc)
-        return search_terms, None
+        return search_terms

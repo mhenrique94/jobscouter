@@ -316,3 +316,42 @@ async def test_vaga_existente_e_ignorada_como_duplicada() -> None:
         assert stats.skipped == 1
         assert stats.inserted == 0
         assert stats.discarded == 0
+
+
+@pytest.mark.asyncio
+async def test_assertiveness_uses_only_include_keywords() -> None:
+    """Assertividade deve usar include_keywords do perfil, independente dos search_terms.
+
+    Garante que termos como "Fullstack" e "Remote" do perfil do candidato sempre
+    contam para match_count, mesmo que não façam parte dos search_terms usados no scraper.
+    """
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        session.add(
+            FilterConfig(
+                id=1,
+                search_terms=["python"],
+                include_keywords=["python", "fullstack", "remote"],
+                exclude_keywords=[],
+            )
+        )
+        session.flush()
+
+        payload = JobPayload(
+            external_id="reg-001",
+            title="Fullstack Remote Engineer",
+            company="Acme",
+            url="https://example.com/jobs/reg-001",
+            source="remoteok",
+            description_raw="Looking for fullstack developer. 100% remote. Python experience.",
+            created_at=datetime.now(UTC),
+        )
+
+        service = JobIngestionService(session)
+        stats = await service.ingest_jobs([payload])
+
+    # Deve ser inserida: python+fullstack+remote batem no conteúdo (match_count=3 >= threshold)
+    assert stats.inserted == 1
+    assert stats.discarded == 0

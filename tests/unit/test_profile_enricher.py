@@ -223,15 +223,13 @@ async def test_get_effective_search_terms_returns_originals_on_failure(monkeypat
 
     monkeypatch.setattr(enricher_module, "build_enriched_profile", _failing_build)
 
-    settings = _settings()
-    effective, expanded_set = await get_effective_search_terms(
+    effective = await get_effective_search_terms(
         search_terms=["Python", "Django"],
         exclude_keywords=[],
-        settings=settings,
+        settings=_settings(),
     )
 
     assert effective == ["Python", "Django"]
-    assert expanded_set is None
 
 
 @pytest.mark.asyncio
@@ -251,14 +249,13 @@ async def test_get_effective_search_terms_returns_originals_without_api_key(
         gemini_retry_delay_seconds=0.01,
     )
 
-    effective, expanded_set = await get_effective_search_terms(
+    effective = await get_effective_search_terms(
         search_terms=["Python"],
         exclude_keywords=[],
         settings=settings,
     )
 
     assert effective == ["Python"]
-    assert expanded_set is None
 
 
 @pytest.mark.asyncio
@@ -272,11 +269,29 @@ async def test_get_effective_search_terms_returns_expanded_on_success(monkeypatc
 
     monkeypatch.setattr(enricher_module, "build_enriched_profile", _fake_build)
 
-    effective, expanded_set = await get_effective_search_terms(
+    effective = await get_effective_search_terms(
         search_terms=["Python"],
         exclude_keywords=[],
         settings=_settings(),
     )
 
     assert effective == ["Python", "FastAPI"]
-    assert expanded_set == {"Python", "FastAPI"}
+
+
+@pytest.mark.asyncio
+async def test_get_effective_search_terms_empty_string_mode_preserves_original(monkeypatch) -> None:
+    """Modo 'sem termo' (search_terms=['']) não deve resultar em lista vazia após enriquecimento."""
+
+    async def _fake_build(include_keywords, exclude_keywords, settings=None):
+        # Simula o enriquecedor que normaliza [''] para EnrichedProfile vazio.
+        return EnrichedProfile(original_keywords=(), expanded_keywords=(), added_by_ai=())
+
+    monkeypatch.setattr(enricher_module, "build_enriched_profile", _fake_build)
+
+    effective = await get_effective_search_terms(
+        search_terms=[""],
+        exclude_keywords=[],
+        settings=_settings(),
+    )
+
+    assert effective == [""]
