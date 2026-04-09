@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Literal
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, Request, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from jobscouter.api.deps import get_session
 from jobscouter.core.config import get_settings
-from jobscouter.core.logging import get_logger, read_log_lines
+from jobscouter.core.logging import LOG_FILE, get_logger, read_log_lines
+from jobscouter.core.task_registry import task_registry
 from jobscouter.db.models import Job, JobStatus
 from jobscouter.db.session import engine
 from jobscouter.scrapers.remotar import RemotarScraper
@@ -22,6 +26,86 @@ from jobscouter.services.ingestion import IngestionStats, JobIngestionService
 from jobscouter.services.profile_enricher import get_effective_search_terms
 
 router = APIRouter(tags=["control"])
+
+
+# ─── SSE helpers ──────────────────────────────────────────────────────────────
+
+_LOG_PATH = Path(LOG_FILE)
+
+
+def _read_new_log_lines(offset: int) -> tuple[list[str], int]:
+    """Lê novas linhas do arquivo de log desde o offset informado.
+
+    Retorna as linhas e o novo offset. Se o arquivo foi rotacionado (tamanho
+    menor que o offset), reinicia o offset do zero.
+    """
+    try:
+        size = _LOG_PATH.stat().st_size
+        if size < offset:
+            offset = 0  # rotação de arquivo detectada
+        if size == offset:
+            return [], offset
+        with _LOG_PATH.open(errors="replace") as fh:
+            fh.seek(offset)
+            content = fh.read()
+            new_offset = fh.tell()
+        lines = [line.rstrip() for line in content.splitlines() if line.strip()]
+        return lines, new_offset
+    except OSError:
+        return [], offset
+
+
+@router.get(
+    "/stream",
+    summary="Stream de logs e status de tasks via SSE",
+    description=(
+        "Abre uma conexão Server-Sent Events que emite dois tipos de evento:\n"
+        "- `log`: nova linha do arquivo de log\n"
+        "- `tasks`: snapshot do estado atual das tasks em execução"
+    ),
+)
+async def stream_events(request: Request) -> StreamingResponse:
+    settings = get_settings()
+    if settings.is_production:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Endpoint de stream indisponivel em producao.",
+        )
+
+    async def generator():
+        # Burst inicial: últimas 100 linhas de log
+        for line in read_log_lines(100):
+            yield f"event: log\ndata: {json.dumps({'line': line})}\n\n"
+
+        # Posição atual no arquivo para iniciar o tail
+        try:
+            file_offset = _LOG_PATH.stat().st_size
+        except OSError:
+            file_offset = 0
+
+        while not await request.is_disconnected():
+            new_lines, file_offset = _read_new_log_lines(file_offset)
+            for line in new_lines:
+                redacted = _redact_line(line)
+                yield f"event: log\ndata: {json.dumps({'line': redacted})}\n\n"
+
+            task_registry.evict_finished()
+            snapshot = task_registry.snapshot()
+            yield f"event: tasks\ndata: {json.dumps(snapshot)}\n\n"
+
+            await asyncio.sleep(0.75)
+
+    return StreamingResponse(
+        generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ─── Models & helpers ──────────────────────────────────────────────────────────
 
 
 class JobStatusUpdatePayload(BaseModel):
@@ -41,6 +125,7 @@ _REDACT_PATTERNS = [
 async def _run_ingest_sync(source: str, limit: int) -> None:
     settings = get_settings()
     logger = get_logger("jobscouter.api.control")
+    task_id = task_registry.start("ingest")
     logger.info(
         "[control.ingest] Iniciando ingestao em background | source=%s limit=%s", source, limit
     )
@@ -100,6 +185,10 @@ async def _run_ingest_sync(source: str, limit: int) -> None:
                                 term,
                                 stats.to_pretty_line(),
                             )
+                            task_registry.update(
+                                task_id,
+                                f"{selected_source}/{term}: {stats.to_pretty_line()}",
+                            )
                         except Exception as exc:
                             session.rollback()
                             logger.exception(
@@ -113,12 +202,15 @@ async def _run_ingest_sync(source: str, limit: int) -> None:
                         await asyncio.sleep(2)
 
             logger.info("[control.ingest] Concluido | %s", total_stats.to_pretty_line())
+        task_registry.finish(task_id, "done")
     except Exception as exc:
+        task_registry.finish(task_id, "error")
         logger.exception("[control.ingest] Falha inesperada na task: %s", exc)
 
 
 def _run_assertiveness_cleanup_sync(threshold: int) -> None:
     logger = get_logger("jobscouter.api.control")
+    task_id = task_registry.start("cleanup")
     logger.info("[control.cleanup] Iniciando limpeza de assertividade | threshold=%s", threshold)
     _BATCH_SIZE = 200
     try:
@@ -131,6 +223,7 @@ def _run_assertiveness_cleanup_sync(threshold: int) -> None:
                     "[control.cleanup] Abortando: include_keywords vazio. "
                     "Configure keywords antes de executar a limpeza para evitar exclusao em massa."
                 )
+                task_registry.finish(task_id, "done")
                 return
 
             deleted = 0
@@ -173,14 +266,18 @@ def _run_assertiveness_cleanup_sync(threshold: int) -> None:
                         kept += 1
 
                 session.commit()
+                task_registry.update(task_id, f"excluidas={deleted} preservadas={kept}")
 
             logger.info("[control.cleanup] Concluido | excluidas=%s preservadas=%s", deleted, kept)
+        task_registry.finish(task_id, "done")
     except Exception as exc:
+        task_registry.finish(task_id, "error")
         logger.exception("[control.cleanup] Falha inesperada na task: %s", exc)
 
 
 async def _run_analyze_sync(limit: int | None) -> None:
     logger = get_logger("jobscouter.api.control")
+    task_id = task_registry.start("analyze")
     logger.info("[control.analyze] Iniciando analise em background | limit=%s", limit)
     try:
         with Session(engine) as session:
@@ -191,7 +288,9 @@ async def _run_analyze_sync(limit: int | None) -> None:
                 statement = statement.limit(limit)
 
             jobs = session.exec(statement).all()
-            logger.info("[control.analyze] Vagas pendentes de analise: %s", len(jobs))
+            total = len(jobs)
+            logger.info("[control.analyze] Vagas pendentes de analise: %s", total)
+            task_registry.update(task_id, f"0/{total} analisadas")
 
             analyzed = 0
             failed = 0
@@ -209,6 +308,7 @@ async def _run_analyze_sync(limit: int | None) -> None:
                     session.add(job)
                     session.commit()
                     analyzed += 1
+                    task_registry.update(task_id, f"{analyzed}/{total} analisadas")
                 except Exception as exc:
                     session.rollback()
                     failed += 1
@@ -220,7 +320,9 @@ async def _run_analyze_sync(limit: int | None) -> None:
                     )
 
             logger.info("[control.analyze] Concluido | analyzed=%s failed=%s", analyzed, failed)
+        task_registry.finish(task_id, "done")
     except Exception as exc:
+        task_registry.finish(task_id, "error")
         logger.exception("[control.analyze] Falha inesperada na task: %s", exc)
 
 

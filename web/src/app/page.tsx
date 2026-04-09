@@ -2,7 +2,7 @@
 
 import axios from "axios";
 import Link from "next/link";
-import { Loader2, RefreshCcw, ScrollText, Settings2 } from "lucide-react";
+import { Loader2, RefreshCcw, Settings2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -10,14 +10,6 @@ import { toast } from "sonner";
 import { JobDetailDrawer } from "@/components/JobDetailDrawer";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import {
-  Drawer,
-  DrawerClose,
-  DrawerContent,
-  DrawerFooter,
-  DrawerHeader,
-  DrawerTitle,
-} from "@/components/ui/drawer";
 import {
   Card,
   CardContent,
@@ -42,7 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getJobs, getLogs, syncAnalyze, syncIngest, type Job, type JobsFilters } from "@/lib/api";
+import { getJobs, syncAnalyze, syncIngest, type Job, type JobsFilters } from "@/lib/api";
 
 type ViewMode = "table" | "cards";
 type PageToken = number | "ellipsis-left" | "ellipsis-right";
@@ -209,9 +201,6 @@ function HomeContent() {
   const [error, setError] = useState<string | null>(null);
   const [ingesting, setIngesting] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
-  const [logsOpen, setLogsOpen] = useState(false);
-  const [logLines, setLogLines] = useState<string[]>([]);
-  const [loadingLogs, setLoadingLogs] = useState(false);
   const [tabTotals, setTabTotals] = useState<Partial<Record<DashboardTabKey, number>>>({});
   const requestIdRef = useRef(0);
   const silentRefreshIdRef = useRef(0);
@@ -392,19 +381,6 @@ function HomeContent() {
     }
   };
 
-  const openLogs = async () => {
-    setLogsOpen(true);
-    setLoadingLogs(true);
-    try {
-      const data = await getLogs(300);
-      setLogLines(data.lines);
-    } catch {
-      setLogLines(["Erro ao carregar logs."]);
-    } finally {
-      setLoadingLogs(false);
-    }
-  };
-
   const onJobUpdated = (updatedJob: Job) => {
     setSelectedJob(updatedJob);
     setTabTotals({});
@@ -472,10 +448,6 @@ function HomeContent() {
                   <Settings2 />
                   Configurações
                 </Link>
-                <Button type="button" variant="outline" onClick={() => void openLogs()}>
-                  <ScrollText />
-                  Ver Logs
-                </Button>
                 <Button
                   type="button"
                   variant="outline"
@@ -761,40 +733,6 @@ function HomeContent() {
             </div>
           </div>
         ) : null}
-
-        <Drawer open={logsOpen} onOpenChange={setLogsOpen} direction="bottom">
-          <DrawerContent className="max-h-[75vh]">
-            <DrawerHeader className="flex items-center justify-between">
-              <DrawerTitle>Logs da aplicação</DrawerTitle>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void openLogs()}
-                disabled={loadingLogs}
-              >
-                {loadingLogs ? <Loader2 className="animate-spin" /> : <RefreshCcw />}
-                Atualizar
-              </Button>
-            </DrawerHeader>
-            <div className="overflow-y-auto px-4 pb-2">
-              {loadingLogs ? (
-                <p className="text-sm text-muted-foreground">Carregando logs...</p>
-              ) : logLines.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nenhum log disponível ainda.</p>
-              ) : (
-                <pre className="whitespace-pre-wrap break-all font-mono text-xs leading-5 text-foreground">
-                  {logLines.join("\n")}
-                </pre>
-              )}
-            </div>
-            <DrawerFooter>
-              <DrawerClose asChild>
-                <Button variant="outline">Fechar</Button>
-              </DrawerClose>
-            </DrawerFooter>
-          </DrawerContent>
-        </Drawer>
 
         <JobDetailDrawer
           open={drawerOpen}
