@@ -154,6 +154,21 @@ Endpoints principais:
 - `GET /api/v1/config`
 - `PATCH /api/v1/config`
 
+### Streaming de atividade em tempo real (SSE)
+
+`GET /api/v1/control/stream` — disponivel apenas em `APP_ENV=development`.
+
+Abre uma conexao Server-Sent Events que emite dois tipos de evento:
+
+- `log`: nova linha do arquivo de log da aplicacao (com redaction automatico de segredos).
+- `tasks`: snapshot do estado atual das tasks em background (`ingest`, `analyze`, `cleanup`).
+
+```bash
+curl -N http://localhost/api/v1/control/stream
+```
+
+O endpoint retorna 403 em ambiente de producao.
+
 ### Listagem de vagas com paginacao
 
 Query params suportados em `GET /api/v1/jobs`:
@@ -193,6 +208,8 @@ Exemplo de resposta:
 ```
 
 ## Frontend Web
+
+O dashboard inclui um **painel de atividade** fixo no rodapé que consome o endpoint SSE `/control/stream` em tempo real: exibe logs da API e o status das tasks em execucao (`ingest`, `analyze`, `cleanup`). O painel e renderizado apenas em `APP_ENV=development`.
 
 Detalhes de desenvolvimento do dashboard Next.js (variaveis, scripts e comportamento de paginacao por URL) estao em [web/README.md](./web/README.md).
 

@@ -12,15 +12,21 @@ export interface TaskState {
   detail: string;
 }
 
+export interface LogEntry {
+  id: number;
+  line: string;
+}
+
 const MAX_LOG_LINES = 500;
 const API_BASE_PATH = process.env.NEXT_PUBLIC_API_BASE_PATH?.trim() || "/api/v1";
 const STREAM_URL = `${API_BASE_PATH}/control/stream`;
 
 export function useTaskStream() {
-  const [logs, setLogs] = useState<string[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [tasks, setTasks] = useState<TaskState[]>([]);
   const [connected, setConnected] = useState(false);
   const esRef = useRef<EventSource | null>(null);
+  const logIdRef = useRef(0);
 
   useEffect(() => {
     const es = new EventSource(STREAM_URL);
@@ -29,8 +35,9 @@ export function useTaskStream() {
     es.addEventListener("log", (e) => {
       try {
         const { line } = JSON.parse((e as MessageEvent).data) as { line: string };
+        const entry: LogEntry = { id: logIdRef.current++, line };
         setLogs((prev) => {
-          const next = [...prev, line];
+          const next = [...prev, entry];
           return next.length > MAX_LOG_LINES ? next.slice(next.length - MAX_LOG_LINES) : next;
         });
       } catch {

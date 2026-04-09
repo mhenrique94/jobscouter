@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Database, Sparkles, Trash2, Terminal } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useTaskStream, type TaskState, type TaskType } from "@/hooks/useTaskStream";
+import { useTaskStream, type LogEntry, type TaskState, type TaskType } from "@/hooks/useTaskStream";
 
 // ─── Log level ────────────────────────────────────────────────────────────────
 
@@ -195,11 +195,9 @@ export function ActivityPanel() {
           {logs.length === 0 ? (
             <p className="font-mono text-[11px] italic text-zinc-700">aguardando atividade...</p>
           ) : (
-            logs.map((line, i) => (
+            logs.map(({ id, line }: LogEntry) => (
               <div
-                // índice é estável porque linhas antigas não são removidas individualmente
-                // eslint-disable-next-line react/no-array-index-key
-                key={i}
+                key={id}
                 className={cn("font-mono text-[11px] leading-5", LEVEL_CLASS[detectLevel(line)])}
               >
                 {line}

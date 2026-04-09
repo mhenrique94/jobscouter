@@ -75,7 +75,8 @@ async def stream_events(request: Request) -> StreamingResponse:
     async def generator():
         # Burst inicial: últimas 100 linhas de log
         for line in read_log_lines(100):
-            yield f"event: log\ndata: {json.dumps({'line': line})}\n\n"
+            redacted = _redact_line(line)
+            yield f"event: log\ndata: {json.dumps({'line': redacted})}\n\n"
 
         # Posição atual no arquivo para iniciar o tail
         try:

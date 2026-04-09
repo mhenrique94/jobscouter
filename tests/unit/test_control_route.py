@@ -251,6 +251,73 @@ def test_update_job_status_not_found(monkeypatch) -> None:
     assert response.json()["detail"] == "Vaga nao encontrada."
 
 
+def test_stream_returns_403_in_production(monkeypatch) -> None:
+    monkeypatch.setattr(control_route, "get_settings", lambda: _PROD_SETTINGS)
+    app = FastAPI()
+    app.include_router(control_route.router, prefix="/api/v1/control")
+    client = TestClient(app)
+
+    response = client.get("/api/v1/control/stream")
+
+    assert response.status_code == 403
+    assert "producao" in response.json()["detail"]
+
+
+def test_stream_burst_sse_format(monkeypatch) -> None:
+    from starlette.requests import Request as StarletteRequest
+
+    monkeypatch.setattr(control_route, "get_settings", lambda: _BASE_SETTINGS)
+    monkeypatch.setattr(control_route, "read_log_lines", lambda n: ["linha de log teste"])
+
+    # Faz o while loop encerrar imediatamente após o burst
+    async def _disconnected(self):
+        return True
+
+    monkeypatch.setattr(StarletteRequest, "is_disconnected", _disconnected)
+
+    app = FastAPI()
+    app.include_router(control_route.router, prefix="/api/v1/control")
+    client = TestClient(app)
+
+    response = client.get("/api/v1/control/stream")
+
+    assert response.status_code == 200
+    assert "text/event-stream" in response.headers["content-type"]
+    lines = [line for line in response.text.splitlines() if line]
+    # Burst: "event: log" seguido de "data: {"line": "..."}"
+    assert lines[0] == "event: log"
+    assert '"line"' in lines[1]
+    assert "linha de log teste" in lines[1]
+
+
+def test_stream_burst_redacts_sensitive_data(monkeypatch) -> None:
+    from starlette.requests import Request as StarletteRequest
+
+    monkeypatch.setattr(control_route, "get_settings", lambda: _BASE_SETTINGS)
+    sensitive_lines = [
+        "gemini_api_key=AIzaSyABC123xyz",
+        "postgresql+psycopg://user:s3cr3t@localhost/db",
+    ]
+    monkeypatch.setattr(control_route, "read_log_lines", lambda n: sensitive_lines)
+
+    async def _disconnected(self):
+        return True
+
+    monkeypatch.setattr(StarletteRequest, "is_disconnected", _disconnected)
+
+    app = FastAPI()
+    app.include_router(control_route.router, prefix="/api/v1/control")
+    client = TestClient(app)
+
+    response = client.get("/api/v1/control/stream")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "AIzaSyABC123xyz" not in body
+    assert "s3cr3t" not in body
+    assert "***" in body
+
+
 def _seed_filter_config(engine, include_keywords: list[str]) -> None:
     with Session(engine) as session:
         session.add(

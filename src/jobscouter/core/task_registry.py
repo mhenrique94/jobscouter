@@ -51,6 +51,7 @@ class TaskRegistry:
                 task = self._tasks[task_id]
                 task.status = status
                 task.ended_at = datetime.now(UTC)
+            self._evict_finished_locked()
 
     def snapshot(self) -> list[dict]:
         with self._lock:
@@ -59,19 +60,23 @@ class TaskRegistry:
                 for t in self._tasks.values()
             ]
 
+    def _evict_finished_locked(self, max_age_s: int = 30) -> None:
+        """Remove tasks concluídas há mais de max_age_s segundos. Deve ser chamado com self._lock adquirido."""
+        now = datetime.now(UTC)
+        stale = [
+            k
+            for k, v in self._tasks.items()
+            if v.status != "running"
+            and v.ended_at is not None
+            and (now - v.ended_at).total_seconds() > max_age_s
+        ]
+        for k in stale:
+            del self._tasks[k]
+
     def evict_finished(self, max_age_s: int = 30) -> None:
         """Remove tasks concluídas há mais de max_age_s segundos."""
-        now = datetime.now(UTC)
         with self._lock:
-            stale = [
-                k
-                for k, v in self._tasks.items()
-                if v.status != "running"
-                and v.ended_at is not None
-                and (now - v.ended_at).total_seconds() > max_age_s
-            ]
-            for k in stale:
-                del self._tasks[k]
+            self._evict_finished_locked(max_age_s)
 
 
 task_registry = TaskRegistry()

@@ -37,7 +37,12 @@ def configure_logging(level: str) -> None:
 
     root = logging.getLogger()
     root.setLevel(level.upper())
-    root.handlers.clear()
+    for existing_handler in list(root.handlers):
+        root.removeHandler(existing_handler)
+        try:
+            existing_handler.close()
+        except Exception:
+            pass
     root.addHandler(handler)
 
     try:
