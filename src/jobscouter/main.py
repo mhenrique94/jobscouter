@@ -15,6 +15,7 @@ from jobscouter.scrapers.remotar import RemotarScraper
 from jobscouter.scrapers.remoteok import RemoteOKScraper
 from jobscouter.services.filter import FilterConfigService
 from jobscouter.services.ingestion import IngestionStats, JobIngestionService
+from jobscouter.services.profile_enricher import get_effective_search_terms
 
 
 def _positive_int(value: str) -> int:
@@ -61,6 +62,16 @@ async def run_ingestion(
         logger.warning("Nenhum termo de busca configurado; executando sem termo explicito.")
         search_terms = [""]
 
+    with session_scope() as session:
+        filter_config = FilterConfigService(session).get_active_config()
+
+    effective_search_terms = await get_effective_search_terms(
+        search_terms=search_terms,
+        exclude_keywords=list(filter_config.exclude_keywords),
+        settings=settings,
+        logger=logger,
+    )
+
     async with httpx.AsyncClient(
         headers={"User-Agent": settings.user_agent},
         timeout=settings.request_timeout,
@@ -95,16 +106,14 @@ async def run_ingestion(
                 ingestion_service = JobIngestionService(session)
                 for selected_source in selected_sources:
                     source_stats = IngestionStats()
-                    for term_index, term in enumerate(search_terms):
-                        checkpoint_date = ingestion_service.get_latest_job_date(selected_source)
-                        if checkpoint_date is not None:
-                            logger.info(
-                                "[%s][%s] Checkpoint encontrado: %s. Vagas antigas serao ignoradas.",
-                                selected_source,
-                                term,
-                                checkpoint_date.isoformat(),
-                            )
-
+                    checkpoint_date = ingestion_service.get_latest_job_date(selected_source)
+                    if checkpoint_date is not None:
+                        logger.info(
+                            "[%s] Checkpoint encontrado: %s. Vagas anteriores a esta data serao ignoradas.",
+                            selected_source,
+                            checkpoint_date.isoformat(),
+                        )
+                    for term_index, term in enumerate(effective_search_terms):
                         logger.info(
                             "[Ingestion] Buscando vagas para o termo: '%s' na fonte '%s'...",
                             term,
@@ -122,7 +131,7 @@ async def run_ingestion(
                         logger.info("[%s][%s] %s", selected_source, term, stats.to_pretty_line())
                         new_or_updated_in_cycle += stats.inserted + stats.updated
 
-                        if term_index < len(search_terms) - 1:
+                        if term_index < len(effective_search_terms) - 1:
                             await asyncio.sleep(2)
 
                     per_source_stats[selected_source] = source_stats

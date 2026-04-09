@@ -42,7 +42,20 @@ Componentes principais:
 - `RemoteOKScraper` e `RemotarScraper`: conectores de ingestao.
 - `JobIngestionService`: persistencia idempotente.
 - `JobFilterService`: filtros estaticos por palavras-chave.
+- `ProfileEnricher`: expande os `search_terms` configurados via Gemini antes da busca.
 - `AIAnalyzerService`: compatibilidade por Gemini.
+
+### Expansao de termos de busca
+
+Antes de iniciar a ingestao, os `search_terms` do `FilterConfig` sao expandidos automaticamente via Gemini:
+
+- **Frameworks/bibliotecas**: adiciona alternativas do mesmo tipo (ex: `Django` → `Flask`, `FastAPI`).
+- **Linguagens**: adiciona os principais frameworks associados (ex: `Python` → `Django`, `Flask`, `FastAPI`).
+- **Conceitos genericos** (`fullstack`, `backend`, etc.): sem expansao.
+
+O scraper e chamado uma vez por termo efetivo (originais + adicionados pela IA). A validacao de assertividade continua usando `filter_config.include_keywords` diretamente — nao os termos de busca expandidos.
+
+Sem `GEMINI_API_KEY`, ou em caso de falha na chamada, o sistema usa os termos originais sem interrupcao.
 
 ## Quick Start
 
@@ -93,8 +106,8 @@ Variaveis essenciais:
 | `REMOTEOK_API_URL` | Nao | `https://remoteok.com/api` | Fonte RemoteOK |
 | `REMOTAR_BASE_URL` | Nao | `https://remotar.com.br` | Fonte Remotar |
 | `REMOTAR_API_URL` | Nao | `https://api.remotar.com.br` | Fonte Remotar |
-| `GEMINI_API_KEY` | Sim (analise IA) | - | Chave Gemini |
-| `GEMINI_MODEL` | Nao | `gemini-1.5-flash-latest` | Modelo preferencial |
+| `GEMINI_API_KEY` | Sim (analise IA e expansao de termos) | - | Chave Gemini; sem ela, analise IA e expansao de termos sao desativadas |
+| `GEMINI_MODEL` | Nao | `models/gemini-2.5-flash-lite` | Modelo preferencial; deve ser da familia `gemini-2.5-flash-lite` ou `gemini-2.5-flash` — modelos fora dessa allowlist sao ignorados com aviso no log |
 | `GEMINI_RETRY_DELAY_SECONDS` | Nao | `1.5` | Retry em rate limit |
 | `DATABASE_URL_DOCKER` | Nao | `postgresql+psycopg://postgres:postgres@db:5432/jobscouter` | URL do banco usada no servico backend do Compose |
 | `POSTGRES_DB` | Nao | `jobscouter` | Nome do banco no servico db |

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -18,6 +19,7 @@ from jobscouter.scrapers.remoteok import RemoteOKScraper
 from jobscouter.services.analyzer import AIAnalyzerService
 from jobscouter.services.filter import FilterConfigService, validate_job_assertiveness
 from jobscouter.services.ingestion import IngestionStats, JobIngestionService
+from jobscouter.services.profile_enricher import get_effective_search_terms
 
 router = APIRouter(tags=["control"])
 
@@ -43,6 +45,18 @@ async def _run_ingest_sync(source: str, limit: int) -> None:
         "[control.ingest] Iniciando ingestao em background | source=%s limit=%s", source, limit
     )
     try:
+        with Session(engine) as session:
+            filter_config = FilterConfigService(session).get_active_config()
+
+        search_terms = list(filter_config.search_terms) or [""]
+
+        effective_search_terms = await get_effective_search_terms(
+            search_terms=search_terms,
+            exclude_keywords=list(filter_config.exclude_keywords),
+            settings=settings,
+            logger=logger,
+        )
+
         async with httpx.AsyncClient(
             headers={"User-Agent": settings.user_agent},
             timeout=settings.request_timeout,
@@ -57,29 +71,46 @@ async def _run_ingest_sync(source: str, limit: int) -> None:
             total_stats = IngestionStats()
 
             for selected_source in selected_sources:
-                with Session(engine) as session:
-                    service = JobIngestionService(session=session)
-                    try:
-                        checkpoint_date = service.get_latest_job_date(selected_source)
-                        jobs = await scrapers[selected_source].fetch_jobs(
-                            limit=limit,
-                            max_pages=None,
-                            keyword=None,
-                            checkpoint_date=checkpoint_date,
-                        )
-                        stats = await service.ingest_jobs(jobs)
-                        session.commit()
-                        total_stats.add(stats)
-                        logger.info(
-                            "[control.ingest] Fonte=%s | %s",
-                            selected_source,
-                            stats.to_pretty_line(),
-                        )
-                    except Exception as exc:
-                        session.rollback()
-                        logger.exception(
-                            "[control.ingest] Falha na fonte %s: %s", selected_source, exc
-                        )
+                with Session(engine) as ck_session:
+                    checkpoint_date = JobIngestionService(session=ck_session).get_latest_job_date(
+                        selected_source
+                    )
+                logger.info(
+                    "[control.ingest] Fonte=%s | checkpoint=%s",
+                    selected_source,
+                    checkpoint_date.isoformat() if checkpoint_date else "nenhum",
+                )
+
+                for term_index, term in enumerate(effective_search_terms):
+                    with Session(engine) as session:
+                        service = JobIngestionService(session=session)
+                        try:
+                            jobs = await scrapers[selected_source].fetch_jobs(
+                                limit=limit,
+                                max_pages=None,
+                                keyword=term,
+                                checkpoint_date=checkpoint_date,
+                            )
+                            stats = await service.ingest_jobs(jobs)
+                            session.commit()
+                            total_stats.add(stats)
+                            logger.info(
+                                "[control.ingest] Fonte=%s termo='%s' | %s",
+                                selected_source,
+                                term,
+                                stats.to_pretty_line(),
+                            )
+                        except Exception as exc:
+                            session.rollback()
+                            logger.exception(
+                                "[control.ingest] Falha na fonte %s termo='%s': %s",
+                                selected_source,
+                                term,
+                                exc,
+                            )
+
+                    if term_index < len(effective_search_terms) - 1:
+                        await asyncio.sleep(2)
 
             logger.info("[control.ingest] Concluido | %s", total_stats.to_pretty_line())
     except Exception as exc:

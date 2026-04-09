@@ -198,7 +198,10 @@ filters:
     assert "[VETO - Localizacao]" in prompt
     assert "REGRAS DE VETO DE FUNCAO:" in prompt
     assert "Software Development / Engineering" in prompt
-    assert "Atribua nota de 1 a 10 usando include_keywords (Python, Django, Vue)" in prompt
+    assert (
+        "PASSO 1 - Liste quais include_keywords (Python, Django, Vue) aparecem LITERALMENTE"
+        in prompt
+    )
     assert '"score"' in prompt and '"summary"' in prompt
 
 
@@ -249,6 +252,49 @@ async def test_non_dev_correlated_role_returns_zero_without_model_call(monkeypat
         service = AIAnalyzerService(session, settings=_settings())
         result = await service.analyze_job(
             _build_job("Data Scientist", "Modelagem estatistica e experimentos")
+        )
+
+    assert result.score == 0
+    assert "fora de desenvolvimento" in result.summary
+    assert fake_model.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_data_science_in_description_does_not_block_dev_role(monkeypatch) -> None:
+    """Vaga de dev cujo título não menciona data science não deve ser barrada
+    apenas porque a descrição da empresa faz referência contextual ao termo."""
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    fake_model = _FakeModel(texts=['{"score": 8, "summary": "Boa aderencia"}'])
+    _configure_fake_google_modules(monkeypatch, fake_model)
+
+    with Session(engine) as session:
+        service = AIAnalyzerService(session, settings=_settings())
+        result = await service.analyze_job(
+            _build_job(
+                "Fullstack Software Engineer Core",
+                "Our platform connects many data science technologies and tools.",
+            )
+        )
+
+    assert result.score == 8
+    assert fake_model.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_data_science_in_title_still_blocks_job(monkeypatch) -> None:
+    """Vaga com 'data science' no título ainda deve ser barrada."""
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    fake_model = _FakeModel()
+    _configure_fake_google_modules(monkeypatch, fake_model)
+
+    with Session(engine) as session:
+        service = AIAnalyzerService(session, settings=_settings())
+        result = await service.analyze_job(
+            _build_job("Data Science Engineer", "Modelagem e experimentos em larga escala.")
         )
 
     assert result.score == 0
@@ -369,3 +415,93 @@ async def test_switches_model_when_resource_exhausted(monkeypatch) -> None:
     assert result.summary == "Usou fallback de modelo"
     assert len(created_models) >= 2
     assert sleep_calls
+
+
+@pytest.mark.asyncio
+async def test_high_growth_context_does_not_trigger_non_dev_classification(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    fake_model = _FakeModel(texts=['{"score": 8, "summary": "Boa aderencia"}'])
+    _configure_fake_google_modules(monkeypatch, fake_model)
+
+    with Session(engine) as session:
+        service = AIAnalyzerService(session, settings=_settings())
+        result = await service.analyze_job(
+            _build_job(
+                "Senior Full Stack Software Engineer",
+                "We work in high-growth environments and ship features weekly.",
+            )
+        )
+
+    assert result.score == 8
+    assert fake_model.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_non_dev_summary_includes_triggering_keyword(monkeypatch) -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    fake_model = _FakeModel()
+    _configure_fake_google_modules(monkeypatch, fake_model)
+
+    with Session(engine) as session:
+        service = AIAnalyzerService(session, settings=_settings())
+        result = await service.analyze_job(
+            _build_job("Growth Hacker", "Estrategias de aquisicao e retencao de usuarios.")
+        )
+
+    assert result.score == 0
+    assert "fora de desenvolvimento" in result.summary
+    assert "'growth hacker'" in result.summary
+    assert fake_model.calls == 0
+
+
+def test_build_prompt_includes_level_rules_when_level_in_keywords(monkeypatch, tmp_path) -> None:
+    filters_path = tmp_path / "filters.yaml"
+    filters_path.write_text(
+        """
+filters:
+  exclude_keywords: ["Junior"]
+  include_keywords: ["Python", "Django", "Senior"]
+""".strip(),
+        encoding="utf-8",
+    )
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    fake_model = _FakeModel()
+    _configure_fake_google_modules(monkeypatch, fake_model)
+
+    with Session(engine) as session:
+        service = AIAnalyzerService(session, settings=_settings(), filters_path=filters_path)
+        prompt = service._build_prompt(_build_job("Backend Developer", "Python, Django, Remote"))
+
+    assert "REGRAS DE NIVEL" in prompt
+    assert "Nivel-alvo do candidato: Senior" in prompt
+    assert "Junior < Pleno < Senior" in prompt
+    assert "[VETO - Nivel]" in prompt
+
+
+def test_build_prompt_omits_level_rules_when_no_level_in_keywords(monkeypatch, tmp_path) -> None:
+    filters_path = tmp_path / "filters.yaml"
+    filters_path.write_text(
+        """
+filters:
+  exclude_keywords: ["Java"]
+  include_keywords: ["Python", "Django", "Vue"]
+""".strip(),
+        encoding="utf-8",
+    )
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    fake_model = _FakeModel()
+    _configure_fake_google_modules(monkeypatch, fake_model)
+
+    with Session(engine) as session:
+        service = AIAnalyzerService(session, settings=_settings(), filters_path=filters_path)
+        prompt = service._build_prompt(_build_job("Backend Developer", "Python, Django, Remote"))
+
+    assert "REGRAS DE NIVEL" not in prompt
